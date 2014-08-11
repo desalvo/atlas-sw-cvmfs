@@ -1,0 +1,378 @@
+#!/bin/bash
+
+VERSION="`basename $0` v1.4 - 20130411"
+help() {
+    cat <<EOD
+Usage: `basename $0` [OPTION]
+   OPTIONS
+   -------
+   --all-autoinstall|-a               Include all autoinstalled releases
+   --all-cvmfs|-c                     Include all CVMFS releases
+   --dbarea <path>                    Path to the DB area to use
+   --debug|-d                         Print debug messages
+   --force|-f                         Force installation/removal
+   --help|-h                          Display this help
+   --install-opts <opts>              Use <opts> options to sw-mgr
+   --max-installs <max>               Exit after <max> installations
+   --nodb                             Skip the autoconfiguration from the DB
+   --release|-r <release name>        Release to be installed/removed,
+                                      comma separated list
+   --remove|-R                        Remove the give release
+   --skip-dbrelease                   Skip the dbrelease installation
+   --trial|-t                         Perform a trial run
+   --user|-u <user name>              User name for the ChangeLog
+
+$VERSION
+Alessandro De Salvo <Alessandro.DeSalvo@roma1.infn.it>
+EOD
+}
+
+in_array() {
+    local hay needle=$1
+    shift
+    for hay; do
+        [[ $hay == $needle ]] && return 0
+    done
+    return 1
+}
+
+# Configuration scripts
+[ -f "$PWD/.arelinstrc" ] && INSTCONF="$PWD/.arelinstrc"
+[ -f "$HOME/.arelinstrc" ] && INSTCONF="$HOME/.arelinstrc"
+
+DBURL="http://atlas-install.roma1.infn.it/atlas_install/exec/rellist.php?showdeps&showtarget"
+#DBURL="http://atlas-vm-db-03.roma1.infn.it/atlas_install/exec/rellist.php?showdeps&showtarget"
+DBRELURL="http://atlas.web.cern.ch/Atlas/GROUPS/DATABASE/pacman4/DBRelease/"
+DEBUG=0
+REMOVE=0
+MAXINSTALLS=-1
+
+if [ -s "$INSTCONF" ] ; then
+    VO_ATLAS_SW_DIR="`grep -i ^VO_ATLAS_SW_DIR= $INSTCONF | cut -d= -f 2`"
+    SITECONF="`grep -i ^AtlasSiteConfig= $INSTCONF | cut -d= -f 2`"
+    PHYSPATH="`grep -i ^PhysPath= $INSTCONF | cut -d= -f 2`"
+    TAGSFILE="`grep -i ^TagsFile= $INSTCONF | cut -d= -f 2`"
+    DEFARCH="`grep -i ^DefaultArch= $INSTCONF | cut -d= -f 2`"
+    DEFLINK="`grep -i ^DefaultLink= $INSTCONF | cut -d= -f 2`"
+    TRIAL="`grep -i ^Trial= $INSTCONF | cut -d= -f 2`"
+    CVMFSPUBLISH="`grep -i ^cvmfs_publish= $INSTCONF | cut -d= -f 2`"
+    SWMGR="`grep -i ^sw-mgr= $INSTCONF | cut -d= -f 2`"
+    CHANGELOG="`grep -i ^ChangeLog= $INSTCONF | cut -d= -f 2`"
+    USERNAME="`grep -i ^UserName= $INSTCONF | cut -d= -f 2`"
+    MAILTO="`grep -i ^MailTo= $INSTCONF | cut -d= -f 2`"
+fi
+
+OPTS=`getopt -o acdfhr:Rtu: -l all-autoinstall,all-cvmfs,dbarea:,debug,force,help,install-opts:,max-installs:,nodb,skip-dbrelease,release:,remove,trial,user: -- "$@"` 
+if [ $? != 0 ] ; then echo "Terminating..."; exit -1 ; fi
+eval set -- "$OPTS"
+
+while true ; do
+    case "$1" in
+        --all-autoinstall|-a)  ALLAUTO=1;shift;;
+        --all-cvmfs|-c)        ALLCVMFS=1;shift;;
+        --debug|-d)            DEBUG=1;shift;;
+        --force|-f)            FORCE=1;shift;;
+        --install-opts)        INSTALL_OPTIONS="$2";shift 2;;
+        --max-installs)        MAXINSTALLS="$2";shift 2;;
+        --nodb)                NODB="y";shift;;
+        --release|-r)          INSTREL="$2";shift 2;;
+        --remove|-R)           REMOVE=1;shift;;
+        --user|-u)             USERNAME="$2";shift 2;;
+        --skip-dbrelease)      SKIPDBREL=1;shift;;
+        --dbarea)              DBAREA=$2;shift 2;;
+        --trial|-t)            TRIAL="yes";shift;;
+        --help|-h)             help;exit;;
+        --)                    shift;break;;
+        \?)                    break;
+        exit;;
+    esac
+done
+
+
+if [ -n "$INSTREL" ] ; then
+    DBURL="${DBURL}&rel=${INSTREL}"
+    INSTRELLIST=(`echo $INSTREL | sed 's/,/ /g'`)
+elif [ -n "$ALLCVMFS" ] ; then
+    DBURL="${DBURL}&cvmfs_available=1"
+else
+    DBURL="${DBURL}&autoinstall=1&obsolete=0"
+fi
+[ -n "$ALLCVMFS" ] && DBURL="${DBURL}&cvmfs_available=1"
+[ -n "$ALLAUTO" ] && DBURL="${DBURL}&autoinstall=1&obsolete=0"
+[ $DEBUG -ne 0 ] && echo "Using DB from $DBURL"
+[ -z "$USERNAME" ] && USERNAME="$USER"
+[ -n "$DBAREA" ] && DBOPTS="--dbarea $DBAREA" || DBOPTS="--dbrelease-clean"
+[ $DEBUG -ne 0 ] && echo "ChangeLog user is $USERNAME"
+TMPDBRELLIST=/tmp/tmp.dbrellist.$$
+TMPRELLIST=/tmp/tmp.rellist.$$
+TRANSACTION=/tmp/tmp.transaction.$$
+[ -z "$PHYSPATH" ] && PHYSPATH="$PWD/software/@RELARCHDIR@/@RELVER@"
+[ -z "$DEFARCH" ]  && DEFARCH="i686-slc5-gcc43-opt"
+[ -z "$DEFLINK" ]  && DEFLINK="$PWD/software/@RELVER@"
+[ -z "$SITECONF" ] && SITECONF="$PWD/AtlasSiteConfig.sh"
+[ -z "$TAGSFILE" ] && TAGSFILE="$PWD/tags"
+[ -z "$SWMGR" ]    && SWMGR="$PWD/sw-mgr"
+[ -z "$DEBUG" ]    && DEBUG=0
+[ ! -f $TAGSFILE ] && eval touch $TAGSFILE
+TAGSFILE="`eval /bin/ls -d $TAGSFILE`"
+MAINLOCK=$HOME/.install.lock
+MAINLOCKOPTS="-60 -r 180"
+LOCKFILE="${TAGSFILE}.lock"
+[ $DEBUG -ne 0 ]   && echo INSTCONF=$INSTCONF
+[ $DEBUG -ne 0 ]   && echo TAGSFILE=$TAGSFILE
+[ $DEBUG -ne 0 ]   && echo LOCKFILE=$LOCKFILE
+[ $DEBUG -ne 0 -a -n "$CHANGELOG" ] && echo CHANGELOG=$CHANGELOG
+
+# Wait for the main lock
+echo "Setting or waiting for lock to clear"
+eval lockfile $MAINLOCKOPTS $MAINLOCK
+rc=$?
+if [ $rc -ne 0 ]; then
+  exit $rc
+fi
+echo "Starting the update"
+
+if [ -z "$SKIPDBREL" ] ; then
+    curl -s "$DBRELURL" | sed -e 's/<[^>]*>//g' | awk '{print $1}' | grep '^DBRelease-[0-9].*\.pacman' | grep -v nightly | sed 's/DBRelease-\([0-9\.]*\).pacman$/\1/g' 2>/dev/null | grep -v '^[0-9]\..*' > $TMPDBRELLIST
+    if [ -s $TMPDBRELLIST ] ; then
+        cat $TMPDBRELLIST | while read DBRELVER; do
+            echo "DBRelease:$DBRELVER : production,autoinstall_on,VO-atlas-dbrelease-${DBRELVER},${DBRELVER},,DBRelease-${DBRELVER},noarch" >> $TMPRELLIST
+        done
+    fi
+fi
+curl --connect-timeout 30 -s "$DBURL" 2>/dev/null >> $TMPRELLIST
+allrc=0
+numinstalls=0
+if [ -s $TMPRELLIST ] ; then
+    cat $TMPRELLIST | while read RELINFO; do
+        [ $MAXINSTALLS -gt -1 -a $numinstalls -ge $MAXINSTALLS ] && break
+        RELCAT="`echo $RELINFO | awk '{print $1}' | cut -d: -f 1`"
+        RELSUBVER="`echo $RELINFO | awk '{print $1}' | cut -d: -f 2`"
+        RELSUBVERNODOT="`echo $RELSUBVER | sed 's/\.//g'`"
+        RELNAME="`echo $RELINFO | awk '{print $1}'`"
+        RELVER="`echo $RELINFO | awk '{print $1}' | cut -d'-' -f 1 | cut -d'_' -f 1`"
+        RELMAIN="`echo $RELVER | cut -d. -f 1-3`"
+        RELTAG="`echo $RELINFO | awk '{print $3}' | cut -d, -f 3`"
+        REQREL="`echo $RELINFO | awk '{print $3}' | cut -d, -f 4 | cut -d- -f 1`"
+        REQTAG="`echo $RELINFO | awk '{print $3}' | cut -d, -f 5`"
+        RELPKG="`echo $RELINFO | awk '{print $3}' | cut -d, -f 6`"
+        RELARCH="`echo $RELINFO | awk '{print $3}' | cut -d, -f 7 | sed -e 's/_/-/g' -e 's/x86-64/x86_64/g'`"
+        RELARCHDIR="`echo $RELARCH | sed -e 's/gcc43[0-9]/gcc43/g' -e 's/gcc46[0-9]/gcc46/g'`"
+        if [ -s "$INSTCONF" ] ; then
+            INSTTMPL="`grep -i ^${RELCAT}_inst= $INSTCONF | cut -d= -f 2`"
+            if [ -z "$INSTTMPL" ] ; then
+                RELCAT1="`echo $RELCAT | cut -d- -f 1`"
+                INSTTMPL="`grep -i ^${RELCAT1}_inst= $INSTCONF | cut -d= -f 2`"
+            fi
+            RMTMPL="`grep -i ^${RELCAT}_rm= $INSTCONF | cut -d= -f 2`"
+            if [ -z "$RMTMPL" ] ; then
+                RELCAT1="`echo $RELCAT | cut -d- -f 1`"
+                RMTMPL="`grep -i ^${RELCAT1}_rm= $INSTCONF | cut -d= -f 2`"
+            fi
+        fi
+        [ $REMOVE -eq 0 ] && INSTALL=1 || INSTALL=0
+        RMFLAG=$REMOVE
+        [ -n "$REQTAG" -a -z "`eval grep ^${REQTAG}$ $TAGSFILE`" -a $INSTALL -eq 1 ] && INSTALL=0
+        if [ -n "`eval grep ^${RELTAG}$ $TAGSFILE`" ] ; then
+            if [ $RMFLAG -eq 0 ] ; then
+                if [ -n "$FORCE" ] ; then
+                    in_array "$RELNAME" "${INSTRELLIST[@]}" && echo "Forcing installation of $RELNAME" || INSTALL=0
+                else
+                    INSTALL=0
+                fi
+            else
+                in_array "$RELNAME" "${INSTRELLIST[@]}" && RMFLAG=1 || RMFLAG=0
+            fi
+        else
+            if [ $RMFLAG -eq 1 ] ; then
+                if [ -n "$FORCE" ] ; then
+                    in_array "$RELNAME" "${INSTRELLIST[@]}" && echo "Forcing removal of $RELNAME" || RMFLAG=0
+                else
+                    RMFLAG=0
+                fi
+            fi
+        fi
+        if [ $INSTALL -eq 1 ] ; then
+            if [ -z "$INSTTMPL" ] ; then
+                INSTTMPL="-a @RELNAME@ -i @RELVER@ -p @PHYSPATH@ --site-config @SITECONF@ --no-tag $DBOPTS --relative-links --cvmfs-install"
+                [ "$RELARCHDIR" == "$DEFARCH" -a "$RELMAIN" == "$RELVER" ] && INSTTMPL="$INSTTMPL --physical-link @DEFLINK@"
+            fi
+            CMD="`echo $INSTTMPL | sed -e "s#@SITECONF@#$SITECONF#g" -e "s#@PHYSPATH@#$PHYSPATH#g" -e "s#@DEFLINK@#$DEFLINK#g" -e "s#@RELARCH@#$RELARCH#g" -e "s#@RELARCHDIR@#$RELARCHDIR#g" -e "s#@RELNAME@#$RELNAME#g" -e "s#@RELVER@#$RELVER#g" -e "s#@RELSUBVER@#$RELSUBVER#g" -e "s#@RELSUBVERNODOT@#$RELSUBVERNODOT#g" -e "s#@RELMAIN@#$RELMAIN#g" -e "s#@RELTAG@#$RELTAG#g" -e "s#@VO_ATLAS_SW_DIR@#$VO_ATLAS_SW_DIR#g"`"
+            CVMFS_CATALOG_PATH="`echo $PHYSPATH | sed -e "s#@SITECONF@#$SITECONF#g" -e "s#@PHYSPATH@#$PHYSPATH#g" -e "s#@DEFLINK@#$DEFLINK#g" -e "s#@RELARCH@#$RELARCH#g" -e "s#@RELARCHDIR@#$RELARCHDIR#g" -e "s#@RELNAME@#$RELNAME#g" -e "s#@RELVER@#$RELVER#g" -e "s#@RELSUBVER@#$RELSUBVER#g" -e "s#@RELSUBVERNODOT@#$RELSUBVERNODOT#g" -e "s#@RELMAIN@#$RELMAIN#g" -e "s#@RELTAG@#$RELTAG#g" -e "s#@VO_ATLAS_SW_DIR@#$VO_ATLAS_SW_DIR#g"`"
+            [ -n "$REQREL" ] && CMD="`echo $CMD | sed -e "s#@REQREL@#$REQREL#g"`"
+            echo "####################################################"
+            echo "#  Installing $RELPKG"
+            echo "#  Using $SWMGR $CMD"
+            echo "####################################################"
+            if [ -z "$TRIAL" ] ; then
+                let numinstalls=$numinstalls+1
+                eval $SWMGR $CMD
+                instrc=$?
+                let allrc=$allrc+$instrc
+                [ ! -d $CVMFS_CATALOG_PATH ] && mkdir -p $CVMFS_CATALOG_PATH
+                [ ! -f $CVMFS_CATALOG_PATH/.cvmfscatalog ] && touch $CVMFS_CATALOG_PATH/.cvmfscatalog
+                if [ $instrc -eq 0 ] ; then
+                    if [ -z "`eval grep ^${RELTAG}$ $TAGSFILE`" ] ; then
+                        if [ $? -eq 0 ] ; then
+                            set -o noclobber
+                            echo "Locking the tags file"
+                            lock_retries=0
+                            max_lock_retries=360
+                            lock_retry_sleep=10
+                            while [ $lock_retries -lt $max_lock_retries ] ; do
+                                echo "tag lock" 2> /dev/null > ${LOCKFILE}
+                                lsr=$?
+                                if [ $lsr -ne 0 ] ; then
+                                    echo "Cannot lock the tags file, waiting ${lock_retry_sleep}s"
+                                    let lock_retries=$lock_retries+1
+                                    sleep ${lock_retry_sleep}s
+                                else
+                                    break
+                                fi
+                            done
+                            set +o noclobber
+                            if [ $lsr -ne 0 ] ; then
+                                echo "Cannot lock the tags file after $lock_retries retries"
+                            else
+                                echo "Adding tag $RELTAG to ${TAGSFILE}"
+                                cp ${TAGSFILE} ${TAGSFILE}.new
+                                echo "$RELTAG" >> ${TAGSFILE}.new
+                                cat ${TAGSFILE}.new | sort > ${TAGSFILE}
+                                rm -f ${TAGSFILE}.new
+                                echo "Unlocking the tags file"
+                                rm -f ${LOCKFILE}
+                            fi
+                        fi
+                    else
+                        echo "Tag already present"
+                    fi
+                    echo "	* + $RELPKG [$RELNAME]" >> $TRANSACTION
+                fi
+            fi
+        fi
+        if [ $RMFLAG -eq 1 ] ; then
+            if [ -z "$RMTMPL" ] ; then
+                RMTMPL="-a @RELNAME@ -r @RELVER@ -p @PHYSPATH@ --site-config @SITECONF@ --no-tag --dbrelease-clean --cvmfs-install"
+                [ "$RELARCHDIR" == "$DEFARCH" -a "$RELMAIN" == "$RELVER" ] && RMTMPL="$RMTMPL --physical-link @DEFLINK@"
+            fi
+            CMD="`echo $RMTMPL | sed -e "s#@SITECONF@#$SITECONF#g" -e "s#@PHYSPATH@#$PHYSPATH#g" -e "s#@DEFLINK@#$DEFLINK#g" -e "s#@RELARCH@#$RELARCH#g" -e "s#@RELARCHDIR@#$RELARCHDIR#g" -e "s#@RELNAME@#$RELNAME#g" -e "s#@RELVER@#$RELVER#g" -e "s#@RELSUBVER@#$RELSUBVER#g" -e "s#@RELSUBVERNODOT@#$RELSUBVERNODOT#g" -e "s#@RELMAIN@#$RELMAIN#g" -e "s#@RELTAG@#$RELTAG#g" -e "s#@VO_ATLAS_SW_DIR@#$VO_ATLAS_SW_DIR#g"`"
+            [ -n "$REQREL" ] && CMD="`echo $CMD | sed -e "s#@REQREL@#$REQREL#g"`"
+            echo "####################################################"
+            echo "#  Removing $RELPKG"
+            echo "#  Using $SWMGR $CMD"
+            echo "####################################################"
+            if [ -z "$TRIAL" ] ; then
+                eval $SWMGR $CMD
+                rmrc=$?
+                if [ $rmrc -eq 0 ] ; then
+                    if [ -n "`eval grep ^${RELTAG}$ $TAGSFILE`" ] ; then
+                        if [ $? -eq 0 ] ; then
+                            set -o noclobber
+                            echo "Locking the tags file"
+                            lock_retries=0
+                            max_lock_retries=360
+                            lock_retry_sleep=10
+                            while [ $lock_retries -lt $max_lock_retries ] ; do
+                                echo "tag lock" 2> /dev/null > ${LOCKFILE}
+                                lsr=$?
+                                if [ $lsr -ne 0 ] ; then
+                                    echo "Cannot lock the tags file, waiting ${lock_retry_sleep}s"
+                                    let lock_retries=$lock_retries+1
+                                    sleep ${lock_retry_sleep}s
+                                else
+                                    break
+                                fi
+                            done
+                            set +o noclobber
+                            if [ $lsr -ne 0 ] ; then
+                                echo "Cannot lock the tags file after $lock_retries retries"
+                            else
+                                echo "Removing tag $RELTAG from ${TAGSFILE}"
+                                cat ${TAGSFILE} | grep -v "$RELTAG" > ${TAGSFILE}.new
+                                cat ${TAGSFILE}.new | sort > ${TAGSFILE}
+                                rm -f ${TAGSFILE}.new
+                                echo "Unlocking the tags file"
+                                rm -f ${LOCKFILE}
+                            fi
+                        fi
+                    else
+                        echo "Tag not found"
+                    fi
+                    echo "	* - $RELPKG [$RELVER]" >> $TRANSACTION
+                fi
+            fi
+        fi
+    done
+fi
+
+# Automatic Changelog
+if [ -n "$CHANGELOG" -a -s "$TRANSACTION" ] ; then
+    LOCKFILE=${CHANGELOG}.lock
+    set -o noclobber
+    echo "Locking the ChangeLog file"
+    lock_retries=0
+    max_lock_retries=360
+    lock_retry_sleep=10
+    while [ $lock_retries -lt $max_lock_retries ] ; do
+        echo "ChangeLog lock" 2> /dev/null > ${LOCKFILE}
+        lsr=$?
+        if [ $lsr -ne 0 ] ; then
+            echo "Cannot lock the ChangeLog file, waiting ${lock_retry_sleep}s"
+            let lock_retries=$lock_retries+1
+            sleep ${lock_retry_sleep}s
+        else
+            break
+        fi
+    done
+    set +o noclobber
+    if [ $lsr -ne 0 ] ; then
+        echo "Cannot lock the tags file after $lock_retries retries"
+    else
+        if [ -f ${CHANGELOG} ] ; then
+            mv ${CHANGELOG} ${CHANGELOG}.save
+        else
+            touch ${CHANGELOG}.save
+        fi
+        [ -s ${CHANGELOG}.save ] && echo >> $TRANSACTION
+        echo "`date +'%Y-%m-%d %H:%M:%S'` $USERNAME" > ${CHANGELOG}.head
+        cat ${CHANGELOG}.head $TRANSACTION ${CHANGELOG}.save > ${CHANGELOG}
+        if [ $? -eq 0 ] ; then
+            rm -f ${CHANGELOG}.head ${CHANGELOG}.save
+            echo "Updating ChangeLog $CHANGELOG successful"
+        else
+            echo "Error writing the ChangeLog, restoring the old copy"
+            rm -f ${CHANGELOG}
+            mv ${CHANGELOG}.save ${CHANGELOG}
+        fi
+        echo "Unlocking the ChangeLog file"
+        rm -f ${LOCKFILE}
+    fi
+fi
+
+# Publish changes
+if [ $allrc -eq 0 ] ; then
+    if [ -n "$CVMFSPUBLISH" -a -s $TRANSACTION ] ; then
+        $CVMFSPUBLISH
+        if [ -n "$MAILTO" ] ; then
+            mail -s "[ATLAS CVMFS UPDATE] `hostname`" "$MAILTO" <<EOD
+Dear admin,
+the following releases have been installed in CVMFS @ `hostname`
+  
+`cat $TRANSACTION`
+  
+Regards,
+    
+     Your faithful installation agent
+EOD
+        fi
+    fi
+    # Clear the install lock
+    echo "Clearing the install lock"
+    rm -f $MAINLOCK
+fi
+
+# Cleanup
+rm -f $TMPRELLIST $TMPDBRELLIST $TRANSACTION
+
+# Exit
+exit $allrc

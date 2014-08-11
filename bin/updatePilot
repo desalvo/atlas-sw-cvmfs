@@ -1,0 +1,115 @@
+#!/bin/sh
+
+[ -z "$1" ] && USERNAME="atlcvmfs"
+
+# Configuration scripts
+[ -f "$PWD/.arelinstrc" ] && INSTCONF="$PWD/.arelinstrc"
+[ -f "$HOME/.arelinstrc" ] && INSTCONF="$HOME/.arelinstrc"
+
+DEST="/cvmfs/atlas.cern.ch/repo/sw/PandaPilot"
+if [ -s "$INSTCONF" ] ; then
+    DEST="`grep -i ^PandaPilotPath= $INSTCONF | cut -d= -f 2`"
+    CHANGELOG="`grep -i ^ChangeLog= $INSTCONF | cut -d= -f 2`"
+    USERNAME="`grep -i ^UserName= $INSTCONF | cut -d= -f 2`"
+    SVNUSERNAME="`grep -i ^SvnUserName= $INSTCONF | cut -d= -f 2`"
+    PILOTPKG="`grep -i ^PandaPilotPackage= $INSTCONF | cut -d= -f 2`"
+    CVMFSPUBLISH="`grep -i ^cvmfs_publish= $INSTCONF | cut -d= -f 2`"
+fi
+
+TRANSACTION=/tmp/tmp.transaction.$$
+CURRDIR="$PWD"
+MAINLOCK=$HOME/.install.lock
+MAINLOCKOPTS="-60 -r 180"
+
+# Wait for the main lock
+echo "Setting or waiting for lock to clear"
+eval lockfile $MAINLOCKOPTS $MAINLOCK
+rc=$?
+if [ $rc -ne 0 ]; then
+  exit $rc
+fi
+
+rm -f $TRANSACTION
+rc=0
+[ ! -d $DEST/$PILOTPKG ] && mkdir -p $DEST/$PILOTPKG/latest
+[ ! -f $DEST/$PILOTPKG/.cvmfscatalog ] && touch $DEST/$PILOTPKG/.cvmfscatalog
+if [ ! -f $DEST/$PILOTPKG/latest/PILOTVERSION ] ; then
+    echo "Checking out the latest PandaPilot into $DEST/$PILOTPKG/latest"
+    svn co svn+ssh://$SVNUSERNAME@svn.cern.ch/reps/panda/$PILOTPKG $DEST/$PILOTPKG/latest
+    currrc=$?
+    if [ $currrc -eq 0 ] ; then
+        cp -f $DEST/$PILOTPKG/latest/PILOTVERSION $DEST/$PILOTPKG/tag
+        echo "	* + PandaPilot `cat $DEST/$PILOTPKG/latest/PILOTVERSION`" >> $TRANSACTION
+        let rc=$rc+$currrc
+    fi
+else
+    cd $DEST/$PILOTPKG/latest
+    echo "Updating PandaPilot in $DEST/$PILOTPKG/latest"
+    svn update
+    currrc=$?
+    if [ $currrc -eq 0 ] ; then
+        if [ "`cat $DEST/$PILOTPKG/latest/PILOTVERSION`" != "`cat $DEST/$PILOTPKG/tag`" ] ; then
+            cp -f $DEST/$PILOTPKG/latest/PILOTVERSION $DEST/$PILOTPKG/tag
+            echo "	* + PandaPilot `cat $DEST/$PILOTPKG/latest/PILOTVERSION`" >> $TRANSACTION
+            let rc=$rc+$currrc
+        fi
+    fi
+fi
+cd $CURRDIR
+
+# Automatic Changelog
+if [ -n "$CHANGELOG" -a -s "$TRANSACTION" ] ; then
+    LOCKFILE=${CHANGELOG}.lock
+    set -o noclobber
+    echo "Locking the ChangeLog file"
+    lock_retries=0
+    max_lock_retries=360
+    lock_retry_sleep=10
+    while [ $lock_retries -lt $max_lock_retries ] ; do
+        echo "ChangeLog lock" 2> /dev/null > ${LOCKFILE}
+        lsr=$?
+        if [ $lsr -ne 0 ] ; then
+            echo "Cannot lock the ChangeLog file, waiting ${lock_retry_sleep}s"
+            let lock_retries=$lock_retries+1
+            sleep ${lock_retry_sleep}s
+        else
+            break
+        fi
+    done
+    set +o noclobber
+    if [ $lsr -ne 0 ] ; then
+        echo "Cannot lock the tags file after $lock_retries retries"
+    else
+        if [ -f ${CHANGELOG} ] ; then
+            mv ${CHANGELOG} ${CHANGELOG}.save
+        else
+            touch ${CHANGELOG}.save
+        fi
+        [ -s ${CHANGELOG}.save ] && echo >> $TRANSACTION
+        echo "`date +'%Y-%m-%d %H:%M:%S'` $USERNAME" > ${CHANGELOG}.head
+        cat ${CHANGELOG}.head $TRANSACTION ${CHANGELOG}.save > ${CHANGELOG}
+        if [ $? -eq 0 ] ; then
+            rm -f ${CHANGELOG}.head ${CHANGELOG}.save
+            echo "Updating ChangeLog $CHANGELOG successful"
+        else
+            echo "Error writing the ChangeLog, restoring the old copy"
+            rm -f ${CHANGELOG}
+            mv ${CHANGELOG}.save ${CHANGELOG}
+        fi
+        echo "Unlocking the ChangeLog file"
+        rm -f ${LOCKFILE}
+    fi
+fi
+
+# Publish changes
+if [ $rc -eq 0 ] ; then
+    [ -n "$CVMFSPUBLISH" -a -s $TRANSACTION ] && $CVMFSPUBLISH
+    # Clear the install lock
+    echo "Clearing the install lock"
+    rm -f $MAINLOCK
+fi
+
+# Cleanup
+rm -f $TRANSACTION
+
+exit $rc

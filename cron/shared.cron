@@ -1,0 +1,5 @@
+0 0,4,8,16,20 * * * /home/shared/bin/updateGenerators > /home/shared/logs/updateGenerators.lastlog 2>&1
+0 2,14 * * * /home/shared/bin/updateAGISData > /home/shared/logs/updateAGISData.lastlog 2>&1
+0 2,6,10,14,18,22 * * * /home/shared/bin/updateAtlasReleases > /home/shared/logs/updateAtlasReleases.lastlog 2>&1
+30 0 * * * /home/shared/bin/updatePilot > /home/shared/logs/updatePilot.lastlog 2>&1
+
