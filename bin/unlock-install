@@ -1,0 +1,8 @@
+#!/bin/sh
+MAINLOCK=$HOME/.install.lock
+
+# Wait for the main lock
+echo "Unlocking install"
+rm -f $MAINLOCK
+
+exit $?

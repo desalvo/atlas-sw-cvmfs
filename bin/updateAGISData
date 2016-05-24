@@ -1,5 +1,48 @@
 #!/bin/sh
 
+get_etag() {
+    TARGET=$1
+    [ -s $ETAGCONF ] && ETAG="`grep -i ^${TARGET} ${ETAGCONF} 2> /dev/null | sed 's/\r//g' | awk '{print $2}'`" || unset ETAG
+    echo $ETAG
+}
+
+download() {
+    TARGET="$1"
+    SRCURL="$2"
+    echo -n "Downloading $TARGET: "
+    ETAGOLD="`get_etag $TARGET`"
+    ETAGNEW="`install $TARGET "$SRCURL"`"
+    rc=$?
+    if [ "$ETAGOLD" != "$ETAGNEW" ] ; then
+        UPDATED="yes"
+        echo "$TARGET: $ETAGNEW" >> ${ETAGCONF}.tmp
+        echo "new tag $ETAGNEW"
+    else
+        echo "$TARGET: $ETAGOLD" >> ${ETAGCONF}.tmp
+        echo "tag unchanged"
+    fi
+    return $rc
+}
+
+install() {
+    TARGET="$1"
+    SRCURL="$2"
+    ETAG="`get_etag $TARGET`"
+    [ -n "$ETAG" ] && ETAG_OPT="--header 'If-None-Match: $ETAG'" || unset ETAG_OPT
+    eval curl -sw "%{http_code}" --connect-timeout 60 -o "${DEST}/${TARGET}" --dump-header $TMPHEADER $ETAG_OPT '$SRCURL' > $TMPRC
+    HTTPRC="`cat $TMPRC`" && rm -f $TMPRC
+    [ -z "$HTTPRC" ] && HTTPRC=404
+    if [ $HTTPRC -eq 200 -o $HTTPRC -eq 304 ] ; then
+        rc=0
+        [ $HTTPRC -eq 200 ] && ETAG="`grep -i ^etag $TMPHEADER 2>/dev/null | awk '{print $2}'`"
+    else
+        rc=1
+    fi
+    echo "$ETAG"
+    rm -f $TMPHEADER
+    return $rc
+}
+
 # Configuration scripts
 [ -f "$PWD/.arelinstrc" ] && INSTCONF="$PWD/.arelinstrc"
 [ -f "$HOME/.arelinstrc" ] && INSTCONF="$HOME/.arelinstrc"
@@ -10,32 +53,68 @@ if [ -s "$INSTCONF" ] ; then
     CHANGELOG="`grep -i ^ChangeLog= $INSTCONF | cut -d= -f 2`"
     USERNAME="`grep -i ^UserName= $INSTCONF | cut -d= -f 2`"
     AGISURL="`grep -i ^AGISDataURL= $INSTCONF | cut -d= -f 2`"
+    TOAURL="`grep -i ^AGISToAURL= $INSTCONF | cut -d= -f 2`"
     SCHEDCONFURL="`grep -i ^AGISSchedconfURL= $INSTCONF | cut -d= -f 2-`"
+    DDMEP="`grep -i ^AGISDDMendpointURL= $INSTCONF | cut -d= -f 2-`"
+    DDMOS="`grep -i ^AGISDDMobjectstoresURL= $INSTCONF | cut -d= -f 2-`"
+    OSSVC="`grep -i ^AGISOSServicesURL= $INSTCONF | cut -d= -f 2-`"
+    CVMFSTRANSACTION="`grep -i ^cvmfs_transaction= $INSTCONF | cut -d= -f 2`"
     CVMFSPUBLISH="`grep -i ^cvmfs_publish= $INSTCONF | cut -d= -f 2`"
+    CVMFSABORT="`grep -i ^cvmfs_abort= $INSTCONF | cut -d= -f 2`"
     MAILTO="`grep -i ^MailTo= $INSTCONF | cut -d= -f 2`"
 fi
 
 TRANSACTION=/tmp/tmp.transaction.$$
 CURRDIR="$PWD"
-MAINLOCK=$HOME/.install.lock
-MAINLOCKOPTS="-60 -r 180"
+ETAGCONF="$HOME/.agisetags"
+TMPHEADER="/tmp/etags.$$"
+TMPRC="/tmp/updateagisrc.$$"
+TMPDATA="/tmp/updateagisdata.$$"
+UPDATED="no"
+
+# Cleanup the temp etags conf file
+rm -f ${ETAGCONF}.tmp
 
 # Wait for the main lock
-echo "Setting or waiting for lock to clear"
-eval lockfile $MAINLOCKOPTS $MAINLOCK
+$HOME/bin/lock-install updateAGISData
 rc=$?
 if [ $rc -ne 0 ]; then
   exit $rc
 fi
 
-rm -f $TRANSACTION
+$CVMFSTRANSACTION
+rm -f $TRANSACTION $TMPHEADER
 rc=0
 [ ! -d $DEST ] && mkdir -p $DEST
-curl -S --connect-timeout 60 -o "$DEST/agis_site_info.json" "$AGISURL"
-currrc=$?
-curl -S --connect-timeout 60 -o "$DEST/agis_schedconf.json" "$SCHEDCONFURL"
+
+# agis_site_info
+download agis_site_info.json "$AGISURL"
 let currrc=$currrc+$?
-if [ $currrc -eq 0 ] ; then
+
+# agis_schedconf
+download agis_schedconf.json "$SCHEDCONFURL"
+let currrc=$currrc+$?
+
+# ToACache
+download ToACache.py "$TOAURL"
+let currrc=$currrc+$?
+
+# DDMendpoints
+download agis_ddmendpoints.json "$DDMEP"
+let currrc=$currrc+$?
+
+# DDMendpointsObjectstores
+download agis_ddmendpoints_objectstores.json "$DDMOS"
+let currrc=$currrc+$?
+
+# OSServices
+download agis_os_services.json "$OSSVC"
+let currrc=$currrc+$?
+
+# Replace the etags file
+mv -f ${ETAGCONF}.tmp ${ETAGCONF}
+
+if [ $currrc -eq 0 -a "$UPDATED" = "yes" ] ; then
     echo "	* + AGISData `date +%Y%m%d%H%M%S`" >> $TRANSACTION
     let rc=$rc+$currrc
 fi
@@ -101,10 +180,21 @@ Regards,
      Your faithful installation agent
 EOD
         fi
+    else
+        [ -n "$CVMFSABORT" ] && $CVMFSABORT
     fi
     # Clear the install lock
-    echo "Clearing the install lock"
-    rm -f $MAINLOCK
+    $HOME/bin/unlock-install
+else
+    if [ -n "$MAILTO" ] ; then
+        mail -s "[ATLAS CVMFS ERROR] `hostname`" "$MAILTO" <<EOD
+Dear admin,
+an updateAGISData job failed to run on `hostname`
+Regards,
+    
+     Your faithful installation agent
+EOD
+    fi
 fi
 
 # Cleanup

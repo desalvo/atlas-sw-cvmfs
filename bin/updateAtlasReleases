@@ -15,6 +15,7 @@ Usage: `basename $0` [OPTION]
    --install-opts <opts>              Use <opts> options to sw-mgr
    --max-installs <max>               Exit after <max> installations
    --nodb                             Skip the autoconfiguration from the DB
+   --platform|-p <platform name>      Force platform for pacman
    --release|-r <release name>        Release to be installed/removed,
                                       comma separated list
    --remove|-R                        Remove the give release
@@ -41,7 +42,6 @@ in_array() {
 [ -f "$HOME/.arelinstrc" ] && INSTCONF="$HOME/.arelinstrc"
 
 DBURL="http://atlas-install.roma1.infn.it/atlas_install/exec/rellist.php?showdeps&showtarget"
-#DBURL="http://atlas-vm-db-03.roma1.infn.it/atlas_install/exec/rellist.php?showdeps&showtarget"
 DBRELURL="http://atlas.web.cern.ch/Atlas/GROUPS/DATABASE/pacman4/DBRelease/"
 DEBUG=0
 REMOVE=0
@@ -55,6 +55,8 @@ if [ -s "$INSTCONF" ] ; then
     DEFARCH="`grep -i ^DefaultArch= $INSTCONF | cut -d= -f 2`"
     DEFLINK="`grep -i ^DefaultLink= $INSTCONF | cut -d= -f 2`"
     TRIAL="`grep -i ^Trial= $INSTCONF | cut -d= -f 2`"
+    CVMFSTRANSACTION="`grep -i ^cvmfs_transaction= $INSTCONF | cut -d= -f 2`"
+    CVMFSABORT="`grep -i ^cvmfs_abort= $INSTCONF | cut -d= -f 2`"
     CVMFSPUBLISH="`grep -i ^cvmfs_publish= $INSTCONF | cut -d= -f 2`"
     SWMGR="`grep -i ^sw-mgr= $INSTCONF | cut -d= -f 2`"
     CHANGELOG="`grep -i ^ChangeLog= $INSTCONF | cut -d= -f 2`"
@@ -62,7 +64,7 @@ if [ -s "$INSTCONF" ] ; then
     MAILTO="`grep -i ^MailTo= $INSTCONF | cut -d= -f 2`"
 fi
 
-OPTS=`getopt -o acdfhr:Rtu: -l all-autoinstall,all-cvmfs,dbarea:,debug,force,help,install-opts:,max-installs:,nodb,skip-dbrelease,release:,remove,trial,user: -- "$@"` 
+OPTS=`getopt -o acdfhr:p:Rtu: -l all-autoinstall,all-cvmfs,dbarea:,debug,force,help,install-opts:,max-installs:,nodb,platform:,skip-dbrelease,release:,remove,trial,user: -- "$@"` 
 if [ $? != 0 ] ; then echo "Terminating..."; exit -1 ; fi
 eval set -- "$OPTS"
 
@@ -75,6 +77,7 @@ while true ; do
         --install-opts)        INSTALL_OPTIONS="$2";shift 2;;
         --max-installs)        MAXINSTALLS="$2";shift 2;;
         --nodb)                NODB="y";shift;;
+        --platform|-p)         PACMAN_PLATFORM="--pretend-platform $2";shift 2;;
         --release|-r)          INSTREL="$2";shift 2;;
         --remove|-R)           REMOVE=1;shift;;
         --user|-u)             USERNAME="$2";shift 2;;
@@ -115,8 +118,6 @@ TRANSACTION=/tmp/tmp.transaction.$$
 [ -z "$DEBUG" ]    && DEBUG=0
 [ ! -f $TAGSFILE ] && eval touch $TAGSFILE
 TAGSFILE="`eval /bin/ls -d $TAGSFILE`"
-MAINLOCK=$HOME/.install.lock
-MAINLOCKOPTS="-60 -r 180"
 LOCKFILE="${TAGSFILE}.lock"
 [ $DEBUG -ne 0 ]   && echo INSTCONF=$INSTCONF
 [ $DEBUG -ne 0 ]   && echo TAGSFILE=$TAGSFILE
@@ -124,13 +125,13 @@ LOCKFILE="${TAGSFILE}.lock"
 [ $DEBUG -ne 0 -a -n "$CHANGELOG" ] && echo CHANGELOG=$CHANGELOG
 
 # Wait for the main lock
-echo "Setting or waiting for lock to clear"
-eval lockfile $MAINLOCKOPTS $MAINLOCK
+$HOME/bin/lock-install updateAtlasReleases
 rc=$?
 if [ $rc -ne 0 ]; then
   exit $rc
 fi
 echo "Starting the update"
+$CVMFSTRANSACTION
 
 if [ -z "$SKIPDBREL" ] ; then
     curl -s "$DBRELURL" | sed -e 's/<[^>]*>//g' | awk '{print $1}' | grep '^DBRelease-[0-9].*\.pacman' | grep -v nightly | sed 's/DBRelease-\([0-9\.]*\).pacman$/\1/g' 2>/dev/null | grep -v '^[0-9]\..*' > $TMPDBRELLIST
@@ -157,7 +158,7 @@ if [ -s $TMPRELLIST ] ; then
         REQTAG="`echo $RELINFO | awk '{print $3}' | cut -d, -f 5`"
         RELPKG="`echo $RELINFO | awk '{print $3}' | cut -d, -f 6`"
         RELARCH="`echo $RELINFO | awk '{print $3}' | cut -d, -f 7 | sed -e 's/_/-/g' -e 's/x86-64/x86_64/g'`"
-        RELARCHDIR="`echo $RELARCH | sed -e 's/gcc43[0-9]/gcc43/g' -e 's/gcc46[0-9]/gcc46/g'`"
+        RELARCHDIR="`echo $RELARCH | sed -e 's/gcc43[0-9]/gcc43/g' -e 's/gcc46[0-9]/gcc46/g' -e 's/gcc48[0-9]/gcc48/g' -e 's/gcc49[0-9]/gcc49/g'`"
         if [ -s "$INSTCONF" ] ; then
             INSTTMPL="`grep -i ^${RELCAT}_inst= $INSTCONF | cut -d= -f 2`"
             if [ -z "$INSTTMPL" ] ; then
@@ -194,7 +195,7 @@ if [ -s $TMPRELLIST ] ; then
         fi
         if [ $INSTALL -eq 1 ] ; then
             if [ -z "$INSTTMPL" ] ; then
-                INSTTMPL="-a @RELNAME@ -i @RELVER@ -p @PHYSPATH@ --site-config @SITECONF@ --no-tag $DBOPTS --relative-links --cvmfs-install"
+                INSTTMPL="-a @RELNAME@ -i @RELVER@ -p @PHYSPATH@ --site-config @SITECONF@ --no-tag $DBOPTS --relative-links --cvmfs-install $PACMAN_PLATFORM"
                 [ "$RELARCHDIR" == "$DEFARCH" -a "$RELMAIN" == "$RELVER" ] && INSTTMPL="$INSTTMPL --physical-link @DEFLINK@"
             fi
             CMD="`echo $INSTTMPL | sed -e "s#@SITECONF@#$SITECONF#g" -e "s#@PHYSPATH@#$PHYSPATH#g" -e "s#@DEFLINK@#$DEFLINK#g" -e "s#@RELARCH@#$RELARCH#g" -e "s#@RELARCHDIR@#$RELARCHDIR#g" -e "s#@RELNAME@#$RELNAME#g" -e "s#@RELVER@#$RELVER#g" -e "s#@RELSUBVER@#$RELSUBVER#g" -e "s#@RELSUBVERNODOT@#$RELSUBVERNODOT#g" -e "s#@RELMAIN@#$RELMAIN#g" -e "s#@RELTAG@#$RELTAG#g" -e "s#@VO_ATLAS_SW_DIR@#$VO_ATLAS_SW_DIR#g"`"
@@ -365,10 +366,21 @@ Regards,
      Your faithful installation agent
 EOD
         fi
+    else
+        [ -n "$CVMFSABORT" ] && $CVMFSABORT
     fi
     # Clear the install lock
-    echo "Clearing the install lock"
-    rm -f $MAINLOCK
+    $HOME/bin/unlock-install
+else
+    if [ -n "$MAILTO" ] ; then
+        mail -s "[ATLAS CVMFS ERROR] `hostname`" "$MAILTO" <<EOD
+Dear admin,
+an updateAtlasRelease job failed to run on `hostname`
+Regards,
+    
+     Your faithful installation agent
+EOD
+    fi
 fi
 
 # Cleanup

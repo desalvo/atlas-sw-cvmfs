@@ -1,0 +1,124 @@
+#!/bin/bash
+
+VERSION="`basename $0` v1.0 - 20141113"
+help() {
+    cat <<EOD
+Usage: `basename $0` [OPTION]
+   OPTIONS
+   -------
+   --help|-h                          Display this help
+   --add|-a <tag>                     Add <tag>
+   --del|-d <tag>                     Remove <tag>
+   --list|-l <tag>                    Check if <tag> is present and print it
+
+$VERSION
+Alessandro De Salvo <Alessandro.DeSalvo@roma1.infn.it>
+EOD
+}
+
+# Configuration scripts
+[ -f "$PWD/.arelinstrc" ] && INSTCONF="$PWD/.arelinstrc"
+[ -f "$HOME/.arelinstrc" ] && INSTCONF="$HOME/.arelinstrc"
+
+if [ -s "$INSTCONF" ] ; then
+    VO_ATLAS_SW_DIR="`grep -i ^VO_ATLAS_SW_DIR= $INSTCONF | cut -d= -f 2`"
+    TAGSFILE="`grep -i ^TagsFile= $INSTCONF | cut -d= -f 2`"
+fi
+
+OPTS=`getopt -o a:d:l:h -l add:,del:,list:,help -- "$@"` 
+if [ $? != 0 ] ; then echo "Terminating..."; exit -1 ; fi
+eval set -- "$OPTS"
+
+while true ; do
+    case "$1" in
+        --add|-a)    MODE="add";RELTAG="$2";shift 2;;
+        --del|-d)    MODE="del";RELTAG="$2";shift 2;;
+        --list|-l)   MODE="list";RELTAG="$2";shift 2;;
+        --help|-h)   help;exit;;
+        --)          shift;break;;
+        \?)          break;
+        exit;;
+    esac
+done
+
+
+[ -z "$TAGSFILE" ] && TAGSFILE="$PWD/tags"
+[ ! -f $TAGSFILE ] && eval touch $TAGSFILE
+TAGSFILE="`eval /bin/ls -d $TAGSFILE`"
+LOCKFILE="${TAGSFILE}.lock"
+
+if [ "$MODE" == "list" ] ; then
+    grep ^${RELTAG}$ $TAGSFILE 2> /dev/null
+elif [ "$MODE" == "add" ] ; then
+    if [ -z "`eval grep ^${RELTAG}$ $TAGSFILE`" ] ; then
+        if [ $? -eq 0 ] ; then
+            set -o noclobber
+            echo "Locking the tags file"
+            lock_retries=0
+            max_lock_retries=360
+            lock_retry_sleep=10
+            while [ $lock_retries -lt $max_lock_retries ] ; do
+                echo "tag lock" 2> /dev/null > ${LOCKFILE}
+                tagrc=$?
+                if [ $tagrc -ne 0 ] ; then
+                    echo "Cannot lock the tags file, waiting ${lock_retry_sleep}s"
+                    let lock_retries=$lock_retries+1
+                    sleep ${lock_retry_sleep}s
+                else
+                    break
+                fi
+            done
+            set +o noclobber
+            if [ $tagrc -ne 0 ] ; then
+                echo "Cannot lock the tags file after $lock_retries retries"
+            else
+                echo "Adding tag $RELTAG to ${TAGSFILE}"
+                cp ${TAGSFILE} ${TAGSFILE}.new
+                echo "$RELTAG" >> ${TAGSFILE}.new
+                cat ${TAGSFILE}.new | sort > ${TAGSFILE}
+                rm -f ${TAGSFILE}.new
+                echo "Unlocking the tags file"
+                rm -f ${LOCKFILE}
+            fi
+        fi
+    else
+        echo "Tag already present"
+    fi
+elif [ "$MODE" == "del" ] ; then
+    if [ -n "`eval grep ^${RELTAG}$ $TAGSFILE`" ] ; then
+        if [ $? -eq 0 ] ; then
+            set -o noclobber
+            echo "Locking the tags file"
+            lock_retries=0
+            max_lock_retries=360
+            lock_retry_sleep=10
+            while [ $lock_retries -lt $max_lock_retries ] ; do
+                echo "tag lock" 2> /dev/null > ${LOCKFILE}
+                tagrc=$?
+                if [ $tagrc -ne 0 ] ; then
+                    echo "Cannot lock the tags file, waiting ${lock_retry_sleep}s"
+                    let lock_retries=$lock_retries+1
+                    sleep ${lock_retry_sleep}s
+                else
+                    break
+                fi
+            done
+            set +o noclobber
+            if [ $tagrc -ne 0 ] ; then
+                echo "Cannot lock the tags file after $lock_retries retries"
+            else
+                echo "Removing tag $RELTAG from ${TAGSFILE}"
+                cat ${TAGSFILE} | grep -v "$RELTAG" > ${TAGSFILE}.new
+                cat ${TAGSFILE}.new | sort > ${TAGSFILE}
+                rm -f ${TAGSFILE}.new
+                echo "Unlocking the tags file"
+                rm -f ${LOCKFILE}
+            fi
+        fi
+    else
+        echo "Tag not found"
+    fi
+fi
+
+# Exit
+exit $tagrc

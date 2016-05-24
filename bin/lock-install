@@ -1,0 +1,16 @@
+#!/bin/sh
+MAINLOCK=$HOME/.install.lock
+MAINLOCKOPTS="-60 -r 180"
+[ -n "$1" ] && LOCKOWNER="$1" || LOCKOWNER="manual_run"
+
+# Wait for the main lock
+echo "Setting or waiting for lock to clear"
+eval lockfile $MAINLOCKOPTS $MAINLOCK
+rc=$?
+if [ $rc -eq 0 -a -f "$MAINLOCK" ] ; then
+    chmod +w $MAINLOCK
+    echo " - ${LOCKOWNER}" >> $MAINLOCK
+    chmod -w $MAINLOCK
+fi
+
+exit $rc

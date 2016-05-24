@@ -1,6 +1,6 @@
 #!/bin/bash
 
-VERSION="sw-mgr v0.236.0 - 20130722"
+VERSION="sw-mgr v0.247.0 - 20150707"
 help() {
     cat <<EOD
 Usage: `basename $0` [OPTION]
@@ -81,6 +81,7 @@ Usage: `basename $0` [OPTION]
    --require-prj <project name>       Require <project name> to be installed
    --dest <path>                      Install the release in <path>
    --skip-local-config                Skip the local configuration setup
+   --lfc-check|-L                     Check LFC bindings
    --local-config <path>              Use <path> to store the local configuration files
    --logical|-l <path>                Install or manage the main logical release from <path>
    --logical-link <path>              Link the logical area from <path>, if present,
@@ -99,15 +100,16 @@ Usage: `basename $0` [OPTION]
                                       or link it to <path>
    --project <project name>|-P        Use project <project name>
    --project-type <type>|-T           Use project type <type>
-                                      <type> = release   -> production releases
-                                      <type> = bugfix    -> bugfix nightlies
-                                      <type> = dev       -> dev nightlies
-                                      <type> = p1nightly -> point1 nightlies
-                                      <type> = patch     -> production patches
-                                      <type> = p1patch   -> point1 patches
-                                      <type> = t0patch   -> Tier0 patches
-                                      <type> = eventview -> PAT/EventView patches
-                                      <type> = tdaq      -> TDAQ releases
+                                      <type> = release      -> production releases
+                                      <type> = bugfix       -> bugfix nightlies
+                                      <type> = dev          -> dev nightlies
+                                      <type> = p1nightly    -> point1 nightlies
+                                      <type> = patch        -> production patches
+                                      <type> = p1patch      -> point1 patches
+                                      <type> = t0patch      -> Tier0 patches
+                                      <type> = eventview    -> PAT/EventView patches
+                                      <type> = tdaq         -> TDAQ releases
+                                      <type> = cvmfsnightly -> cvmfs nightlies
    --project-opt <option>|-O          Use optimization <option>
                                       <option> = opt -> optimized mode
                                       <option> = dbg -> debug mode
@@ -130,6 +132,7 @@ Usage: `basename $0` [OPTION]
    --query|-q                         Query the available (local) releases
    --quiet|-Q                         Disable verbose output
    --xml|-x <file name>               Generate an XML report of the installation
+   --kvpath <path>                    Use a local copy of KV from <path>
    --kvpost                           Post the test results to the GKV portal
    --kv-cache <cache>                 Use the <cache> KitValidation cache
    --kv-conf <URL>                    Use <URL> to get the KV configuration
@@ -273,6 +276,7 @@ getSWarea() {
 
 showSiteInfo() {
     msgOut INFO "======================="
+    msgOut INFO "sw-mgr v$VERSION"
     msgOut INFO "Resource info"
     msgOut INFO "Timestamp:  `date`"
     msgOut INFO "Running as: `whoami`"
@@ -281,6 +285,7 @@ showSiteInfo() {
     [ -n "$SHELL" ] && msgOut INFO "Shell:      $SHELL"
     [ "`which lsb_release 2> /dev/null`" != "" ] && msgOut INFO "`lsb_release -d`"
     msgOut INFO "======================="
+    printenv
 }
 
 hostEquiv() {
@@ -380,7 +385,7 @@ checkSite() {
         msgOut INFO "[FS INFO] `df -T -P ${RELLOC} 2>/dev/null | grep -v ^Filesystem | tail -n 1`"
         let checkrc=110
     fi
-    if [ "$PRJTYPE" != "patch" -a "$PRJTYPE" != "p1patch" -a "$PRJTYPE" != "t0patch" -a "$PRJTYPE" != "eventview" -a "$PRJTYPE" != "analysis" -a "$PRJTYPE" != "tdaq" ] ; then
+    if [ "$PRJTYPE" != "patch" -a "$PRJTYPE" != "p1patch" -a "$PRJTYPE" != "t0patch" -a "$PRJTYPE" != "eventview" -a "$PRJTYPE" != "analysis" -a "$PRJTYPE" != "cvmfsnightly" -a "$PRJTYPE" != "tdaq" ] ; then
         SWSHAREDFS="`isSharedFS $SWLOC`"
         SWDF="`getDiskFree ${SWLOC}`"
         if [ $ISINSTALLED -eq 0 -a "`getFSType $RELLOC`" != "cvmfs" ] ; then
@@ -1402,7 +1407,7 @@ prepareInstallDirs() {
         NEWPHYSPATH=1
     fi
     \find $RELLOC -maxdepth 1 -type d ! -perm -a+rx -exec chmod a+rx {} \;
-    if [ ! -d ${SWLOC} -a "${PRJTYPE}" != "patch" -a "${PRJTYPE}" != "p1patch" -a "$PRJTYPE" != "t0patch" -a "$PRJTYPE" != "eventview" -a "$PRJTYPE" != "analysis" -a "$PRJTYPE" != "tdaq" -a "$SWLOC" != "$RELLOC" ] ; then
+    if [ ! -d ${SWLOC} -a "${PRJTYPE}" != "patch" -a "${PRJTYPE}" != "p1patch" -a "$PRJTYPE" != "t0patch" -a "$PRJTYPE" != "eventview" -a "$PRJTYPE" != "analysis" -a "$PRJTYPE" != "cvmfsnightly" -a "$PRJTYPE" != "tdaq" -a "$SWLOC" != "$RELLOC" ] ; then
         msgOut ERROR "Missing logical installation dir (${SWLOC}). Trying to create it."
         mkdir -p "${SWLOC}"
         NEWLOGPATH=1
@@ -1447,7 +1452,7 @@ install() {
     # Release platform,arch and compiler
     REL_PLAT="`echo ${ARCH} | sed 's/^[_ ]\(.*\)_slc\([0-9]\)_gcc\([0-9]*\)/\2/g'`"
     REL_ARCH="`echo ${ARCH} | sed 's/^[_ ]\(.*\)_slc\([0-9]\)_gcc\([0-9]*\)/\1/g'`"
-    REL_COMP="`echo ${ARCH} | sed -e 's/^[_ ]\(.*\)_slc\([0-9]\)_gcc\([0-9]*\)/\3/g' -e 's/43[5-9]$/43/g' -e 's/46[0-9]$/46/g'`"
+    REL_COMP="`echo ${ARCH} | sed -e 's/^[_ ]\(.*\)_slc\([0-9]\)_gcc\([0-9]*\)/\3/g' -e 's/4\([3-9]\)[0-9]$/4\1/g'`"
 
     # Check for linked releases
     SKIPPHYSINST=0
@@ -1627,7 +1632,7 @@ install() {
     MAINRELVER="`echo $RELEASE | awk -F "." '{for (i=1;i<=3;i++) ver=sprintf("%s%02d",ver,$i)}END{print int(ver)}'`"
 
     # Handle the patches to releases and EventView caches
-    if [ "${PRJTYPE}" == "patch" -o "${PRJTYPE}" == "p1patch" -o "$PRJTYPE" == "t0patch" -o "${PRJTYPE}" == "p1nightly" -o "${PRJTYPE}" == "eventview" -o "$PRJTYPE" == "analysis" ] ; then
+    if [ "${PRJTYPE}" == "patch" -o "${PRJTYPE}" == "p1patch" -o "$PRJTYPE" == "t0patch" -o "${PRJTYPE}" == "p1nightly" -o "${PRJTYPE}" == "eventview" -o "$PRJTYPE" == "analysis" -o "$PRJTYPE" == "cvmfsnightly" ] ; then
         if [ "$PRJTYPE" == "analysis" -a "${REQPRJNAME}" != "AtlasOffline" ] ; then
             MAINRELEASE="`echo $RELEASE | cut -d "." -f 1-4`"
         else
@@ -1730,7 +1735,7 @@ install() {
     msgOut INFO "Installation type: ${PRJNAME}"
     msgOut INFO "PATH=${PATH}"
     msgOut INFO "Physical area: ${SWPHYS}"
-    [ "${PRJTYPE}" != "patch" -a "${PRJTYPE}" != "p1patch" -a "$PRJTYPE" != "t0patch" -a "${PRJTYPE}" != "eventview" -a "${PRJTYPE}" != "analysis" -a "$SWLOC" != "$RELLOC" -a "$PRJTYPE" != "tdaq" ] && \
+    [ "${PRJTYPE}" != "patch" -a "${PRJTYPE}" != "p1patch" -a "$PRJTYPE" != "t0patch" -a "${PRJTYPE}" != "eventview" -a "${PRJTYPE}" != "analysis" -a "${PRJTYPE}" != "cvmfsnightly" -a "$SWLOC" != "$RELLOC" -a "$PRJTYPE" != "tdaq" ] && \
     msgOut INFO "Logical area:  ${SWLOG}"
     msgOut INFO "Starting physical installation in ${PWD}"
     if [ "$DEBUG" == "yes" ] ; then
@@ -1756,12 +1761,11 @@ install() {
             [ ! -d ".rpmdb" ] && mkdir .rpmdb
             msgOut INFO "Starting the installation of ${ATLASRELEASE} via rpm"
             msgOut INFO "Downloading packages"
-            #RPMPKGARCH="`echo $ARCH | sed -e 's/^_//' -e 's/_/-/g'`-${PRJOPT}"
-            RPMPKGARCH="`echo $ARCH | sed 's/^_*\(.*\)_slc\([0-9]*\)_gcc\([0-9]*\)/\1-slc\2-gcc\3/g'`-${PRJOPT}"
-            msgOut INFO "wget -r -nd -Nd -l3 -erobots=off -P RPMCACHE -A ${ATLASRELEASE}*_${RPMPKGARCH}*rpm -A ${ATLASRELEASE}*_noarch*rpm ${ATLAS}"
-            wget -r -nd -Nd -l3 -erobots=off -P RPMCACHE -A "${ATLASRELEASE}*_${RPMPKGARCH}*rpm" -A "${ATLASRELEASE}*_noarch*rpm" ${ATLAS}
-            let instrc=$instrc+$?
+            RPMPKGARCH="`echo $ARCH | sed 's/^_*\(.*\)_slc\([0-9]*\)_gcc\([0-9][0-9]\)[0-9]*/\1-slc\2-gcc\3/g'`-${PRJOPT}"
+            wget -r -nd -Nd -l3 -erobots=off -P RPMCACHE -A "${ATLASRELEASE}*_${RPMPKGARCH}*rpm" -A "${ATLASRELEASE}*_noarch*rpm" -o rpmdownload.log ${ATLAS}
+            #let instrc=$instrc+$?
             if [ $instrc -eq 0 ] ; then
+                rm -f rpmdownload.log
                 msgOut INFO "Installing packages"
                 rpm --nodeps --noscripts -Uhv --prefix=$PWD --dbpath $PWD/.rpmdb RPMCACHE/${ATLASRELEASE}*
                 let instrc=$instrc+$?
@@ -1772,7 +1776,7 @@ install() {
                     msgOut ERROR "Cannot install rpm packages"
                 fi
             else
-                msgOut ERROR "Cannot download tdaq packages"
+                msgOut ERROR "Cannot download tdaq packages. Error $instrc"
             fi
         else
             if [ "$PACMAN_OPTS" != "" -a "$USEPACBALL" != "yes" ] ; then
@@ -1948,7 +1952,7 @@ EOCS
                             msgOut INFO "$SYSTEM_ARCH site compiler bin found in $COMPILER_BIN"
                             msgOut INFO "$SYSTEM_ARCH site compiler lib found in $COMPILER_LIB"
                             [ ! -d "${RELPATH}/AtlasSite/gcc-links" ] && mkdir -p ${RELPATH}/AtlasSite/gcc-links
-                            COMPILER_LINK="${SYSTEM_ARCH}`echo ${ARCH} | sed -e 's/^_*i686//' -e 's/^_*x86_64//' -e 's/_/-/g' -e 's/gcc43[5-9]/gcc43/g' -e 's/gcc46[0-9]/gcc46/g'`-opt"
+                            COMPILER_LINK="${SYSTEM_ARCH}`echo ${ARCH} | sed -e 's/^_*i686//' -e 's/^_*x86_64//' -e 's/_/-/g' -e 's/4\([3-9]\)[0-9]$/4\1/g'`-opt"
                             msgOut INFO "Linking `dirname ${COMPILER_BIN}` to ${RELPATH}/AtlasSite/gcc-links/${COMPILER_LINK}"
                             [ -L ${RELPATH}/AtlasSite/gcc-links/${COMPILER_LINK} ] && rm -f ${RELPATH}/AtlasSite/gcc-links/${COMPILER_LINK}
                             ln -sf `dirname ${COMPILER_BIN}` ${RELPATH}/AtlasSite/gcc-links/${COMPILER_LINK}
@@ -2090,6 +2094,25 @@ EOAS
                     msgOut INFO "Unlocking the installation area"
                     rm -f ${LOCKFILE} ${SNAPN}
                     return $instrc
+                fi
+            fi
+
+            # Perform the post-install steps for AtlasProduction only
+            if [ "$PRJNAME" == "AtlasProduction" -a -s "${RELPATH}/cmtsite/asetup.sh" ] ; then
+                if [ -n "$POSTINSTALL" -o $MAINRELVER -gt 190100 ] ; then
+                    MAINRELEASE="`echo $RELEASE | cut -d "." -f 1-3`"
+                    CMTCONFIG_OPT="`echo ${ARCH} | sed -E 's/^_+(i686|x86_64).(slc[0-9]*).(gcc[0-9]*)/\1-\2-\3/'`-${PRJOPT}"
+                    (
+                        msgOut INFO "Running post-install scripts"
+                        msgOut INFO "Setting up the main release with . ${RELPATH}/cmtsite/asetup.sh AtlasOffline $MAINRELEASE --cmtconfig=$CMTCONFIG_OPT"
+                        . ${RELPATH}/cmtsite/asetup.sh AtlasOffline $MAINRELEASE --cmtconfig=$CMTCONFIG_OPT
+                        if [ -d "${RELPATH}/${PRJNAME}/$RELEASE/${PRJNAME}Release/cmt" ] ; then
+                           cd ${PRJNAME}/$RELEASE/${PRJNAME}Release/cmt
+                           msgOut INFO "Running post installation scripts from $PWD"
+                           cmt br - 'cmt -no_cleanup config'; cmt br - cmt post_install
+                        fi
+                        msgOut INFO "Post-install scripts completed"
+                    )
                 fi
             fi
 
@@ -2261,7 +2284,7 @@ EOAS
 
     if [ $SKIPLOGINST -eq 0 ] ; then
         # Create the logical installation for the selected release
-        if [ "${PRJTYPE}" != "patch" -a "${PRJTYPE}" != "p1patch" -a "$PRJTYPE" != "t0patch" -a "${PRJTYPE}" != "eventview" -a "${PRJTYPE}" != "analysis" -a "$PRJTYPE" != "tdaq" -a "${SWLOC}" != "${RELLOC}" ] ; then
+        if [ "${PRJTYPE}" != "patch" -a "${PRJTYPE}" != "p1patch" -a "$PRJTYPE" != "t0patch" -a "${PRJTYPE}" != "eventview" -a "${PRJTYPE}" != "analysis" -a "$PRJTYPE" != "cvmfsnightly" -a "$PRJTYPE" != "tdaq" -a "${SWLOC}" != "${RELLOC}" ] ; then
             [ "`which pacman 2>/dev/null`" == "" ] && setupPacman
             cd "${SWLOG}"
             msgOut INFO "Starting the logical installation in ${PWD}"
@@ -2393,7 +2416,7 @@ EOAS
                 if [ -s ${RELPATH}/cmtsite/asetup.sh ] ; then
                     SLC_VER="`echo ${ARCH} | sed -e 's/^.*slc\([0-9]*\).*/\1/g'`"
                     if [ $SLC_VER -lt 6 ] ; then
-                        GCC_VER="`echo ${ARCH} | sed -e 's/^.*\(gcc[0-9]*\).*/\1/g' -e 's/43[5-9]$/43/' -e 's/46[0-9]$/46/' -e 's/47[0-9]$/47/'`"
+                        GCC_VER="`echo ${ARCH} | sed -e 's/^.*\(gcc[0-9]*\).*/\1/g' -e 's/4\([3-9]\)[0-9]$/4\1/g'`"
                     else
                         GCC_VER="gcc"
                     fi
@@ -2421,7 +2444,7 @@ EOD
                         sed -i -e "s#^\(source.*AtlasSetup.*\)\( \-\-input.*\)#\1#g" -e "s#^source.*AtlasSetup.*#\0 --input $SITESETUP#" ${RELPATH}/cmtsite/asetup.sh
                     fi
                 fi
-                if [ "${PRJTYPE}" != "patch" -a "${PRJTYPE}" != "p1patch" -a "$PRJTYPE" != "t0patch" -a "$PRJTYPE" != "analysis" -a "$PRJTYPE" != "tdaq" -a $SKIPLOGINST -eq 0 ] ; then
+                if [ "${PRJTYPE}" != "patch" -a "${PRJTYPE}" != "p1patch" -a "$PRJTYPE" != "t0patch" -a "$PRJTYPE" != "analysis" -a "$PRJTYPE" != "cvmfsnightly" -a "$PRJTYPE" != "tdaq" -a $SKIPLOGINST -eq 0 ] ; then
                     # Set some additional tags
                     RUNTIME_TAGS=",gcc${REL_COMP},slc${REL_PLAT}"
                     [ "$REL_ARCH" == "i686" ] && RUNTIME_TAGS="${RUNTIME_TAGS},32" || RUNTIME_TAGS="${RUNTIME_TAGS},64"
@@ -2438,7 +2461,7 @@ EOD
                         # Create the setup-release.sh hub
                         REL_ARCH="`echo ${ARCH} | sed 's/^[_ ]\(.*\)_slc\([0-9]\)_gcc\([0-9]*\)/\1/g'`"
                         REL_PLAT="`echo ${ARCH} | sed 's/^[_ ]\(.*\)_slc\([0-9]\)_gcc\([0-9]*\)/\2/g'`"
-                        REL_COMP="`echo ${ARCH} | sed -e 's/^[_ ]\(.*\)_slc\([0-9]\)_gcc\([0-9]*\)/\3/g' -e 's/43[5-9]$/43/g' -e 's/46[0-9]$/46/g'`"
+                        REL_COMP="`echo ${ARCH} | sed -e 's/^[_ ]\(.*\)_slc\([0-9]\)_gcc\([0-9]*\)/\3/g' -e 's/4\([3-9]\)[0-9]$/4\1/g'`"
                         rm -fr cmtsite
                         mkdir -p cmtsite
 cat > cmtsite/setup.sh <<EOSR
@@ -2834,7 +2857,8 @@ validate() {
     let validrc=0
     # Reset the environment
     ENVLAST="/tmp/sw-mgr-envlast.tmp.$$"
-    /usr/bin/env | grep '=' | cut -d'=' -f 1 | egrep -v '^_$|^\s|^	|^$' | while read var; do echo "$var='`/usr/bin/printenv $var`'"; done > $ENVLAST
+    #/usr/bin/env | grep '=' | cut -d'=' -f 1 | egrep -v '^_$|^\s|^	|^$' | while read var; do echo "$var='`/usr/bin/printenv $var`'"; done > $ENVLAST
+    export -p | sed 's/^[^=]* \([^ ]*=\)/\1/;/^_=/d' > $ENVSTART
     if [ -s $ENVSTART ] ; then
         echo "ENVLAST=\"$ENVLAST\"" >> $ENVSTART
         msgOut INFO "Resetting the environment from $ENVSTART"
@@ -2900,6 +2924,13 @@ validate() {
                 msgOut INFO "Project directory ${SWPHYS}/${PRJNAME}/${RELEASE} found"
             else
                 msgOut ERROR "No directory ${SWPHYS}/${PRJNAME}/${RELEASE} found"
+                validrc=1
+            fi
+        elif [ "${PRJTYPE}" == "cvmfsnightly" ] ; then
+            if [ -d "${SWPHYS}" ] ; then
+                msgOut INFO "CVMFS nightly directory ${SWPHYS} found"
+            else
+                msgOut ERROR "No directory ${SWPHYS} found"
                 validrc=1
             fi
         elif [ "${PRJTYPE}" == "tdaq" ] ; then
@@ -2968,13 +2999,18 @@ validate() {
             fi
         else
             # Main release version
-            MAINRELVER="`echo $RELEASE | awk -F "." '{for (i=1;i<=3;i++) ver=sprintf("%s%02d",ver,$i)}END{print int(ver)}'`"
+            if [ -z "${BASERELVER}" ] ; then
+                KVRELVER="$RELEASE"
+            else
+                KVRELVER="$BASERELVER"
+            fi
+            MAINRELVER="`echo $KVRELVER | awk -F "." '{for (i=1;i<=3;i++) ver=sprintf("%s%02d",ver,$i)}END{print int(ver)}'`"
 
             # Let's run KitValidation
             if [ "${PRJNAME}" == "AtlasRelease" -o "${PRJNAME}" == "release" ] ; then
                 KVBUILD_OPTS=""
             else
-                RELSERIAL="`echo $RELEASE | cut -d "." -f 1-3 | awk -F. '{printf "%d",$1; for(i=2;i<=NF;i++) printf "%03d", $i;}'`"
+                RELSERIAL="`echo $KVRELVER | cut -d "." -f 1-3 | awk -F. '{printf "%d",$1; for(i=2;i<=NF;i++) printf "%03d", $i;}'`"
                 if [ "${PRJNAME}" == "AtlasOffline" -a $RELSERIAL -lt 13000030 -a $RELSERIAL -gt 0 ] ; then
                     KVBUILD_OPTS="--project AtlasProduction"
                 else
@@ -2987,13 +3023,15 @@ validate() {
             [ "${PRJTYPE}" == "p1patch" ] && KVRELTYPE=":p1" || KVRELTYPE=""
             [ "${PRJTYPE}" == "t0patch" ] && KVRELTYPE=":t0" || KVRELTYPE=""
             [ "${PRJTYPE}" == "eventview" ] && KVRELTYPE=":ev" || KVRELTYPE=""
-            KVRELBASE="`echo $RELEASE | cut -d "." -f 1-3`"
+            KVRELBASE="`echo $KVRELVER | cut -d "." -f 1-3`"
             if [ "$DEBUG" == "yes" ] ; then
                 msgOut DEBUG "PATH=${PATH}"
                 msgOut DEBUG "LD_LIBRARY_PATH=${LD_LIBRARY_PATH}"
                 msgOut DEBUG "PYTHONPATH=${PYTHONPATH}"
             fi
-            [ "`which pacman 2>/dev/null`" == "" ] && setupPacman
+            if [ -z "$KVPATH" ] ; then
+                [ "`which pacman 2>/dev/null`" == "" ] && setupPacman
+            fi
             msgOut INFO "Starting validation of release $RELEASE"
 
             # Override the DB release if needed
@@ -3023,17 +3061,24 @@ validate() {
             fi
 
             KVBASEDIR="${KVRELBASE}"
-            msgOut INFO "Executing pacman $PACMAN_OPTS -get ${LCGCACHE}:${KVBASEDIR}/KitValidation"
-            pacman $PACMAN_OPTS -get ${LCGCACHE}:${KVBASEDIR}/KitValidation
-            if [ $? -ne 0 ] ; then
-                msgOut WARNING "Failed to get the KV setup from ${LCGCACHE}:${KVBASEDIR}/KitValidation"
-                KVBASEDIR="generic"
-                msgOut WARNING "Trying with pacman $PACMAN_OPTS -get ${LCGCACHE}:${KVBASEDIR}/KitValidation"
-                pacman $PACMAN_OPTS -get ${LCGCACHE}:${KVBASEDIR}/KitValidation
-                let validrc=$validrc+$?
+            if [ -n "$KVPATH" -a -d "$KVPATH/KitValidation" ] ; then
+                ln -s $KVPATH/* .
+            else
+                msgOut WARNING "No directory $KVPATH/KitValidation found"
             fi
-            msgOut INFO "Executing pacman $PACMAN_OPTS -get ${LCGCACHE}:${KVBASEDIR}/KitValidationPatches"
-            pacman $PACMAN_OPTS -get ${LCGCACHE}:${KVBASEDIR}/KitValidationPatches
+            if [ ! -d "$KVPATH/KitValidation" ] ; then
+                msgOut INFO "Executing pacman $PACMAN_OPTS -get ${LCGCACHE}:${KVBASEDIR}/KitValidation"
+                pacman $PACMAN_OPTS -get ${LCGCACHE}:${KVBASEDIR}/KitValidation
+                if [ $? -ne 0 ] ; then
+                    msgOut WARNING "Failed to get the KV setup from ${LCGCACHE}:${KVBASEDIR}/KitValidation"
+                    KVBASEDIR="generic"
+                    msgOut WARNING "Trying with pacman $PACMAN_OPTS -get ${LCGCACHE}:${KVBASEDIR}/KitValidation"
+                    pacman $PACMAN_OPTS -get ${LCGCACHE}:${KVBASEDIR}/KitValidation
+                    let validrc=$validrc+$?
+                fi
+                msgOut INFO "Executing pacman $PACMAN_OPTS -get ${LCGCACHE}:${KVBASEDIR}/KitValidationPatches"
+                pacman $PACMAN_OPTS -get ${LCGCACHE}:${KVBASEDIR}/KitValidationPatches
+            fi
             [ $? -eq 0 ] && source setup.sh
 
             # Use CMTUSERCONTEXT to overcome compilation problems with SL5 binaries on SL6
@@ -3043,7 +3088,7 @@ validate() {
             if [ "$KVBUILD_OPTS" != "" -a $validrc -eq 0 ] ; then
                 REL_ARCH="`echo ${ARCH} | sed 's/^[_ ]\(.*\)_slc\([0-9]\)_gcc\([0-9]*\)/\1/g'`"
                 REL_PLAT="`echo ${ARCH} | sed 's/^[_ ]\(.*\)_slc\([0-9]\)_gcc\([0-9]*\)/\2/g'`"
-                REL_COMP="`echo ${ARCH} | sed -e 's/^[_ ]\(.*\)_slc\([0-9]\)_gcc\([0-9]*\)/\3/g' -e 's/43[5-9]$/43/g' -e 's/46[0-9]$/46/g'`"
+                REL_COMP="`echo ${ARCH} | sed -e 's/^[_ ]\(.*\)_slc\([0-9]\)_gcc\([0-9]*\)/\3/g' -e 's/4\([3-9]\)[0-9]$/4\1/g'`"
                 # Set some additional tags
                 RUNTIME_TAGS=",gcc${REL_COMP},slc${REL_PLAT}"
                 [ "$REL_ARCH" == "i686" ] && RUNTIME_TAGS="${RUNTIME_TAGS},32" || RUNTIME_TAGS="${RUNTIME_TAGS},64"
@@ -3059,12 +3104,14 @@ validate() {
                 if [ "${PRJTYPE}" == "p1nightly" ] ; then
                     msgOut INFO "Setting up the point1 nightly release from $PWD"
                     if [ -s ${SWRELPATH}/cmtsite/asetup.sh -a $MAINRELVER -ge 160000 ] ; then
-                        msgOut INFO "${SETUPCMD}${ASETUP_DBOPT}${PRJNAME} ${RELEASE} ${PRJOPT} ${ARUNTIME_TAGS} runtime"
-                        eval ${SETUPCMD}${ASETUP_DBOPT}${PRJNAME} ${RELEASE} ${PRJOPT} ${ARUNTIME_TAGS} runtime
+                        msgOut INFO "${SETUPCMD}${ASETUP_DBOPT}${PRJNAME} ${KVRELVER} ${PRJOPT} ${ARUNTIME_TAGS} runtime"
+                        eval ${SETUPCMD}${ASETUP_DBOPT}${PRJNAME} ${KVRELVER} ${PRJOPT} ${ARUNTIME_TAGS} runtime
                     else
-                        msgOut INFO "${SETUPCMD}${PRJNAME},${RELEASE},${PRJOPT}${RUNTIME_TAGS},runtime"
-                        eval ${SETUPCMD}${PRJNAME},${RELEASE},${PRJOPT}${RUNTIME_TAGS},runtime
+                        msgOut INFO "${SETUPCMD}${PRJNAME},${KVRELVER},${PRJOPT}${RUNTIME_TAGS},runtime"
+                        eval ${SETUPCMD}${PRJNAME},${KVRELVER},${PRJOPT}${RUNTIME_TAGS},runtime
                     fi
+                elif [ "${PRJTYPE}" == "cvmfsnightly" ] ; then
+                    msgOut INFO "Skipping setup for CVMFS nightlies"
                 elif [ "${PRJTYPE}" == "patch" -o "${PRJTYPE}" == "p1patch" -o "$PRJTYPE" == "t0patch" -o "${PRJTYPE}" == "eventview" -o "${PRJTYPE}" == "analysis" -a "$PRJTYPE" != "tdaq" ] ; then
                     msgOut INFO "Setting up the release from $PWD"
                     if [ -s ${SWRELPATH}/cmtsite/asetup.sh -a $MAINRELVER -ge 160000 ] ; then
@@ -3077,17 +3124,12 @@ validate() {
                 else
                     msgOut INFO "Setting up the release from $PWD"
                     if [ -s ${SWRELPATH}/cmtsite/asetup.sh -a $MAINRELVER -ge 160000 ] ; then
-                        msgOut INFO "${SETUPCMD}${ASETUP_DBOPT}${PRJNAME} ${RELEASE} ${PRJOPT} ${ARUNTIME_TAGS}"
-                        eval ${SETUPCMD}${ASETUP_DBOPT}${PRJNAME} ${RELEASE} ${PRJOPT} ${ARUNTIME_TAGS}
+                        msgOut INFO "${SETUPCMD}${ASETUP_DBOPT}${PRJNAME} ${KVRELVER} ${PRJOPT} ${ARUNTIME_TAGS}"
+                        eval ${SETUPCMD}${ASETUP_DBOPT}${PRJNAME} ${KVRELVER} ${PRJOPT} ${ARUNTIME_TAGS}
                     else
-                        msgOut INFO "${SETUPCMD}${PRJNAME},${RELEASE},${PRJOPT}${RUNTIME_TAGS}"
-                        eval ${SETUPCMD}${PRJNAME},${RELEASE},${PRJOPT}${RUNTIME_TAGS}
+                        msgOut INFO "${SETUPCMD}${PRJNAME},${KVRELVER},${PRJOPT}${RUNTIME_TAGS}"
+                        eval ${SETUPCMD}${PRJNAME},${KVRELVER},${PRJOPT}${RUNTIME_TAGS}
                     fi
-                    # Extend the CMTEXTRATAGS if we are on SL6 equivalent machines
-                    #if [ "`hostEquiv`" == "host-slc6" ] ; then
-                    #    msgOut INFO "Extending CMTEXTRATAGS with host-slc6 for SL6 equivalent plaforms"
-                    #    export CMTEXTRATAGS="${CMTEXTRATAGS},host-slc6"
-                    #fi
                 fi
                 if [ "${PRJTYPE}" == "patch" -o "${PRJTYPE}" == "p1patch" -o "$PRJTYPE" == "t0patch" ] ; then
                     msgOut INFO "Using patch release $RELEASE from $PWD"
@@ -3111,23 +3153,24 @@ validate() {
                 elif [ "${PRJTYPE}" == "eventview" ] ; then
                     msgOut INFO "Using EventView version $RELEASE from $PWD"
                     setupDev "-tag=${REQPRJNAME},${KVRELBASE}${RUNTIME_TAGS},groupArea,runtime"
-                    #validrc=$?
                     validrc=1
                 elif [ "${PRJTYPE}" == "analysis" ] ; then
                     msgOut INFO "Skipping additional setup since we are using an analysis project"
+                elif [ "${PRJTYPE}" == "cvmfsnightly" ] ; then
+                    msgOut INFO "Skipping additional setup since we are using a CVMFS nighlty"
                 elif [ "${PRJTYPE}" == "tdaq" ] ; then
                     msgOut INFO "Skipping additional setup since we are using tdaq"
                 else
-                    msgOut INFO "Using plain release $RELEASE from $PWD"
+                    msgOut INFO "Using plain release $KVRELVER from $PWD"
                     [ "`which pacman 2>/dev/null`" == "" ] && setupPacman
                     msgOut INFO "Executing pacman $PACMAN_OPTS -get ${LCGCACHE}:${KVBASEDIR}/KitValidationPyJTPatches"
                     pacman $PACMAN_OPTS -get ${LCGCACHE}:${KVBASEDIR}/KitValidationPyJTPatches
                     if [ -s ${SWRELPATH}/cmtsite/asetup.sh -a $MAINRELVER -ge 160000 ] ; then
-                        msgOut INFO "Setting up the main release runtime: ${SETUPCMD}${ASETUP_DBOPT}${PRJNAME} ${RELEASE} ${PRJOPT} ${ARUNTIME_TAGS} runtime"
-                        eval ${SETUPCMD}${ASETUP_DBOPT}${PRJNAME} ${RELEASE} ${PRJOPT} ${ARUNTIME_TAGS} runtime
+                        msgOut INFO "Setting up the main release runtime: ${SETUPCMD}${ASETUP_DBOPT}${PRJNAME} ${KVRELVER} ${PRJOPT} ${ARUNTIME_TAGS} runtime"
+                        eval ${SETUPCMD}${ASETUP_DBOPT}${PRJNAME} ${KVRELVER} ${PRJOPT} ${ARUNTIME_TAGS} runtime
                     else
-                        msgOut INFO "Setting up the main release runtime: ${SETUPCMD}${PRJNAME},${RELEASE},${PRJOPT}${RUNTIME_TAGS},runtime"
-                        eval ${SETUPCMD}${PRJNAME},${RELEASE},${PRJOPT}${RUNTIME_TAGS},runtime
+                        msgOut INFO "Setting up the main release runtime: ${SETUPCMD}${PRJNAME},${KVRELVER},${PRJOPT}${RUNTIME_TAGS},runtime"
+                        eval ${SETUPCMD}${PRJNAME},${KVRELVER},${PRJOPT}${RUNTIME_TAGS},runtime
                     fi
                     if [ -d $PWD/AtlasProduction/*/AtlasProductionRunTime/cmt ] ; then
                         EPREL="`find $PWD/AtlasProduction -maxdepth 1 -exec basename {} \; | tail -n 1`"
@@ -3203,6 +3246,7 @@ validate() {
                     fi
                     [ "$KVNOAUTO" == "y" ] && KVNOAUTO_OPTS=" --no-auto"
                     msgOut INFO "Starting KV (thread #${kvthr}/${TESTTHR})..."
+                    msgOut INFO "SITEROOT=$SITEROOT"
                     msgOut INFO "${KVHOME}/KitValidation -r ${RELEASE}${KVRELTYPE} -p ${SWRELPATH} -gkvn --bw -t ${PWD} ${KVBUILD_OPTS}${KVDISABLE_OPTS}${KVADDSEARCH}${KVPOSTTAG_OPTS}${KVCONFURL_OPTS}${KVENABLE_OPTS}${KVNOAUTO_OPTS}"
                     if [ "$DEBUG" == "yes" ] ; then
                         msgOut DEBUG "PATH=${PATH}"
@@ -3354,7 +3398,7 @@ remove() {
                 msgOut INFO "Trying with release $RELEASE in $RELLOCFOUND"
 
                 # Check if any patch is installed
-                if [ "$RELLOCFOUND" != "" -a "$PRJTYPE" != "patch" -a "${PRJTYPE}" != "p1patch" -a "$PRJTYPE" != "t0patch" -a "${PRJTYPE}" != "eventview" -a "$PRJTYPE" != "analysis" -a "$PRJTYPE" != "tdaq" ] ; then
+                if [ "$RELLOCFOUND" != "" -a "$PRJTYPE" != "patch" -a "${PRJTYPE}" != "p1patch" -a "$PRJTYPE" != "t0patch" -a "${PRJTYPE}" != "eventview" -a "$PRJTYPE" != "analysis" -a "$PRJTYPE" != "cvmfsnightly" -a "$PRJTYPE" != "tdaq" ] ; then
                     msgOut INFO "Detecting patches for $RELEASE"
                     cd "${RELLOC}"
                     PATCHRELARCH="`echo $ARCH | sed 's/^_//g'`"
@@ -3546,7 +3590,7 @@ remove() {
 
         # Remove the logical installation, unless we're processing patches or we do not have it
         cd "${TOPDIR}"
-        if [ "$PRJTYPE" != "patch" -a "${PRJTYPE}" != "p1patch" -a "$PRJTYPE" != "t0patch" -a "${PRJTYPE}" != "eventview" -a "$PRJTYPE" != "analysis" -a "$PRJTYPE" != "tdaq" -a "${SWLOC}" != "none" -a "$SWLOC" != "$RELLOC" ] ; then
+        if [ "$PRJTYPE" != "patch" -a "${PRJTYPE}" != "p1patch" -a "$PRJTYPE" != "t0patch" -a "${PRJTYPE}" != "eventview" -a "$PRJTYPE" != "analysis" -a "$PRJTYPE" != "cvmfsnightly" -a "$PRJTYPE" != "tdaq" -a "${SWLOC}" != "none" -a "$SWLOC" != "$RELLOC" ] ; then
             if [ -d ${SWLOC} ] ; then
                 SWLOC="`getRWpath ${SWLOC}`"
                 msgOut INFO "Removing logical installation from ${SWLOC}"
@@ -3588,7 +3632,7 @@ remove() {
         # List the software area contents
         SWLOCPATH="`dirname ${SWLOC}`" 
         RELLOCPATH="`dirname ${RELLOC}`" 
-        if [ "${PRJTYPE}" != "patch" -a "${PRJTYPE}" != "p1patch" -a "$PRJTYPE" != "t0patch" -a "${PRJTYPE}" != "eventview" -a "$PRJTYPE" != "analysis" -a "$PRJTYPE" != "tdaq" -a "$SWLOC" != "none" -a "$SWLOC" != "$RELLOC" ] ; then
+        if [ "${PRJTYPE}" != "patch" -a "${PRJTYPE}" != "p1patch" -a "$PRJTYPE" != "t0patch" -a "${PRJTYPE}" != "eventview" -a "$PRJTYPE" != "analysis" -a "$PRJTYPE" != "cvmfsnightly" -a "$PRJTYPE" != "tdaq" -a "$SWLOC" != "none" -a "$SWLOC" != "$RELLOC" ] ; then
             msgOut INFO "Showing contents of the logical installation path (${SWLOCPATH})"
             msgOut INFO "`\ls ${SWLOCPATH}`"
         fi
@@ -3631,7 +3675,8 @@ addTag() {
     # Reset the environment
     ENVLAST="/tmp/sw-mgr-envlast.tmp.$$"
     #/usr/bin/printenv | grep -v '^_=' | sed -e "s/\([^=]\)=/\1='/" -e "s/$/'/g" > $ENVLAST
-    /usr/bin/env | grep '=' | cut -d'=' -f 1 | egrep -v '^_$|^\s|^	|^$' | while read var; do echo "$var='`/usr/bin/printenv $var`'"; done > $ENVLAST
+    #/usr/bin/env | grep '=' | cut -d'=' -f 1 | egrep -v '^_$|^\s|^	|^$' | while read var; do echo "$var='`/usr/bin/printenv $var`'"; done > $ENVLAST
+    export -p | sed 's/^[^=]* \([^ ]*=\)/\1/;/^_=/d' > $ENVLAST
     if [ -s $ENVSTART ] ; then
         echo "ENVLAST=\"$ENVLAST\"" >> $ENVSTART
         msgOut INFO "Resetting the environment from $ENVSTART"
@@ -3783,7 +3828,8 @@ removeTag() {
     # Reset the environment
     ENVLAST="/tmp/sw-mgr-envlast.tmp.$$"
     #/usr/bin/printenv | grep -v '^_=' | sed -e "s/\([^=]\)=/\1='/" -e "s/$/'/g" > $ENVLAST
-    /usr/bin/env | grep '=' | cut -d'=' -f 1 | egrep -v '^_$|^\s|^	|^$' | while read var; do echo "$var='`/usr/bin/printenv $var`'"; done > $ENVLAST
+    #/usr/bin/env | grep '=' | cut -d'=' -f 1 | egrep -v '^_$|^\s|^	|^$' | while read var; do echo "$var='`/usr/bin/printenv $var`'"; done > $ENVLAST
+    export -p | sed 's/^[^=]* \([^ ]*=\)/\1/;/^_=/d' > $ENVLAST
     if [ -s $ENVSTART ] ; then
         echo "ENVLAST=\"$ENVLAST\"" >> $ENVSTART
         msgOut INFO "Resetting the environment from $ENVSTART"
@@ -3959,42 +4005,44 @@ genPoolcondPFC() {
     fi
     [ "$DQ2LSVER" != "" ] && msgOut INFO "dq2-ls v$DQ2LSVER found"
 
-    # Check if we are able to use LFC
-    python -c "import lfc" &> /dev/null
-    let gprc=$?
-    if [ $gprc -ne 0 ] ; then
-        MAXREL=$((${#RELSETUPLIST[@]}-1))
-        if [ ${MAXREL} -ge 0 ] ; then
-            for r in `seq $MAXREL -1 0`; do
-                if [ -n "${RELPYTHON[$r]}" ] ; then
-                    OLDPYTHON="`which python`"
-                    OLDPATH="$PATH"
-                    OLDPYTHONPATH="$PYTHONPATH"
-                    OLDLIBRARYPATH="$LD_LIBRARY_PATH"
-                    export PATH=${RELPYTHON[$r]}/bin:$PATH
-                    export PYTHONPATH=${RELPYTHON[$r]}/bin:${RELPYTHON[$r]}/lib:$PYTHONPATH
-                    export LD_LIBRARY_PATH=${RELPYTHON[$r]}/lib:$LD_LIBRARY_PATH
-                    msgOut WARNING "Cannot import LFC bindings using $OLDPYTHON. Trying with `which python`"
-                    python -c "import lfc" &> /dev/null
-                    let gprc=$?
-                    if [ $gprc -eq 0 ] ; then
-                        msgOut INFO "LFC import successful using `which python`"
-                        break
+    if [ -n "$LFCCHECK" ] ; then
+        # Check if we are able to use LFC
+        python -c "import lfc" &> /dev/null
+        let gprc=$?
+        if [ $gprc -ne 0 ] ; then
+            MAXREL=$((${#RELSETUPLIST[@]}-1))
+            if [ ${MAXREL} -ge 0 ] ; then
+                for r in `seq $MAXREL -1 0`; do
+                    if [ -n "${RELPYTHON[$r]}" ] ; then
+                        OLDPYTHON="`which python`"
+                        OLDPATH="$PATH"
+                        OLDPYTHONPATH="$PYTHONPATH"
+                        OLDLIBRARYPATH="$LD_LIBRARY_PATH"
+                        export PATH=${RELPYTHON[$r]}/bin:$PATH
+                        export PYTHONPATH=${RELPYTHON[$r]}/bin:${RELPYTHON[$r]}/lib:$PYTHONPATH
+                        export LD_LIBRARY_PATH=${RELPYTHON[$r]}/lib:$LD_LIBRARY_PATH
+                        msgOut WARNING "Cannot import LFC bindings using $OLDPYTHON. Trying with `which python`"
+                        python -c "import lfc" &> /dev/null
+                        let gprc=$?
+                        if [ $gprc -eq 0 ] ; then
+                            msgOut INFO "LFC import successful using `which python`"
+                            break
+                        fi
+                        export PATH=$OLDPATH
+                        export PYTHONPATH=$OLDPYTHONPATH
+                        export LD_LIBRARY_PATH=$OLDLIBRARYPATH
+                    else
+                        msgOut WARNING "No python in release `echo ${RELLIST[$r]} | sed 's#.*/AtlasOffline/\([0-9\.]*\)/.*#\1#'`"
                     fi
-                    export PATH=$OLDPATH
-                    export PYTHONPATH=$OLDPYTHONPATH
-                    export LD_LIBRARY_PATH=$OLDLIBRARYPATH
-                else
-                    msgOut WARNING "No python in release `echo ${RELLIST[$r]} | sed 's#.*/AtlasOffline/\([0-9\.]*\)/.*#\1#'`"
-                fi
-            done
-        else
-            msgOut ERROR "Cannot import LFC bindings using `which python` and no ATLAS sw release is found"
+                done
+            else
+                msgOut ERROR "Cannot import LFC bindings using `which python` and no ATLAS sw release is found"
+            fi
         fi
-    fi
-    if [ $gprc -ne 0 ] ; then
-        msgOut ERROR "Cannot import LFC bindings"
-        return $gprc
+        if [ $gprc -ne 0 ] ; then
+            msgOut ERROR "Cannot import LFC bindings"
+            return $gprc
+        fi
     fi
 
     # Set up the ddm helper
@@ -4186,8 +4234,9 @@ genPoolcondPFC() {
                             for PCTGTDIR in $PCTOPDIRLIST; do
                                 if [ -n "$DQ2PFCGEN" ] ; then
                                     # Use the new PFC gen tools from DQ2
-                                    msgOut INFO "$DQ2PFCGEN -L ROAMING -T $PCTGTDIR"
-                                    $DQ2PFCGEN -L ROAMING -T $PCTGTDIR
+                                    [ -z "$DDMSITE" ] && DDMSITE="ROAMING"
+                                    msgOut INFO "$DQ2PFCGEN -L $DDMSITE -p gsiftp -T $PCTGTDIR"
+                                    $DQ2PFCGEN -L $DDMSITE -p gsiftp -T $PCTGTDIR
                                     let gprc=$gprc+$?
                                 else
                                     # Use the legacy PFC gen tools from DQ2
@@ -5122,7 +5171,7 @@ DQ2SETUPURL="http://classis01.roma1.infn.it/pacman/packages/DQ2Setup"
 PCMODE="all"
 MAXRELSETUPDEPTH=5
 
-OPTS=`getopt -o a:d:D:fgG:H:i:k:l:m:M:oO:p:P:Qr:R:s:St:T:x:w:hcCfnNquv:V -l add-tags,autoconf:,cache,check,cleanup,clean-links,compiler-home:,cvmfs-install,debug,dest:,dbarea:,dbrelease:,dbrelease-cache:,dbrelease-clean,ddm-setup:,ddm-site:,ddm-verify,dir:,disk-free:,dump-tags:,extra-tag:,extra-pkg:,force-tags,goc-name:,grid-name:,kv-conf:,kv-disable:,kv-enable:,kv-keep,kv-no-auto,kvpost-tag:,grid-cache,host:,install:,install-compiler,kit-cache:,kv-cache:,kvpost,local-config:,logical:,logical-link:,manage:,min-install-size:,no-opt,no-tag,no-compat-patch,no-new-pacball,override-lock,package:,pacman-ver:,pretend-platform:,physical:,physical-link:,post-siteinfo,post-siteurl:,project:,project-opt:,project-type:,quiet,restore-backup,reinstall,reinstall-clean,relative-links,release-only,release-path:,pacball,pacball-dataset:,pacball-repo:,poolcond-copy,poolcond-mode:,poolcond-scandir,poolcond-topdir:,poolcond-pattern:,release-setup:,release-setup-level:,release-ver:,replicate,remove:,remove-snap:,remove-tags,rm-tags-on-fail,require-compiler,require-shfs,require-prj:,setenv:,set-frontier,setup-latest:,site-config:,site-type:,skip-local-config,snap:,snapdir:,snapname:,subcluster:,tag-file:,tag-mode:,tag-utility:,tags:,target:,temp-cache,test:,tthreads:,update,use-grid,vo:,validate,validation-exe:,xml:,create-dvd,write-dvd:,help,force,no-cache,no-version,query,stagein:,lfcHost:,inputGUIDs:,oldPrefix:,newPrefix: -- "$@"` 
+OPTS=`getopt -o a:d:D:fgG:H:i:k:l:Lm:M:oO:p:P:Qr:R:s:St:T:x:w:hcCfnNquv:V -l add-tags,autoconf:,cache,check,cleanup,clean-links,compiler-home:,cvmfs-install,debug,dest:,dbarea:,dbrelease:,dbrelease-cache:,dbrelease-clean,ddm-setup:,ddm-site:,ddm-verify,dir:,disk-free:,dump-tags:,extra-tag:,extra-pkg:,force-tags,goc-name:,grid-name:,kv-conf:,kv-disable:,kv-enable:,kv-keep,kv-no-auto,kvpath:,kvpost-tag:,grid-cache,host:,install:,install-compiler,kit-cache:,kv-cache:,kvpost,local-config:,logical:,logical-link:,manage:,min-install-size:,no-opt,no-tag,no-compat-patch,no-new-pacball,override-lock,package:,pacman-ver:,pretend-platform:,physical:,physical-link:,post-siteinfo,post-siteurl:,postinstall,project:,project-opt:,project-type:,quiet,restore-backup,reinstall,reinstall-clean,relative-links,release-only,release-name:,release-path:,pacball,pacball-dataset:,pacball-repo:,poolcond-copy,poolcond-mode:,poolcond-scandir,poolcond-topdir:,poolcond-pattern:,release-setup:,release-setup-level:,release-ver:,replicate,remove:,remove-snap:,remove-tags,rm-tags-on-fail,require-compiler,require-shfs,require-prj:,setenv:,set-frontier,setup-latest:,site-config:,site-type:,skip-local-config,snap:,snapdir:,snapname:,subcluster:,tag-file:,tag-mode:,tag-utility:,tags:,target:,temp-cache,test:,tthreads:,update,use-grid,vo:,validate,validation-exe:,xml:,create-dvd,write-dvd:,help,force,no-cache,no-version,query,stagein:,lfc-check,lfcHost:,inputGUIDs:,oldPrefix:,newPrefix: -- "$@"` 
 if [ $? != 0 ] ; then
     echo "[ARGUMENTS] $@"
     echo "Terminating..."
@@ -5163,6 +5212,7 @@ while true ; do
         --kv-enable)           KVE="$2";shift 2;;
         --kv-keep)             KVKEEP="y";shift;;
         --kv-no-auto)          KVNOAUTO="y";shift;;
+        --kvpath)              KVPATH="$2";shift 2;;
         --kvpost)              T_POST="yes";shift;;
         --kvpost-tag)          KVPOSTTAG="$2";shift 2;;
         --validate|-V)         ACTION="validate";shift;;
@@ -5178,6 +5228,7 @@ while true ; do
         --kit-cache|-k)        ATLAS="$2";shift 2;;
         --min-install-size)    MININSTALLSIZE="$2";shift 2;;
         --dest)                SWPATH="$2";shift 2;;
+        --lfc-check|-L)        LFCCHECK="y";shift;;
         --lfcHost)             LFCHOST="$2";shift 2;;
         --local-config)        LOCALCONF="$2";shift 2;;
         --logical|-l)          SWLOC="`echo $2 | sed 's;//*;/;g'`";shift 2;;
@@ -5199,6 +5250,7 @@ while true ; do
         --poolcond-topdir)     PCTOPDIR="$2";shift 2;;
         --post-siteinfo)       POSTSITEINFO="yes";shift;;
         --post-siteurl)        POSTSITEURL="$2";shift 2;;
+        --postinstall)         POSTINSTALL="y";shift;;
         --project|-P)          PRJNAME="$2";shift 2;;
         --project-opt|-O)      PRJOPT="$2";shift 2;;
         --project-type|-T)     PRJTYPE="`echo $2 | tr [A-Z] [a-z]`";shift 2;;
@@ -5213,6 +5265,7 @@ while true ; do
         --reinstall)           REINSTALL="yes";shift;;
         --reinstall-clean)     REINSTALLCLEAN="yes";shift;;
         --relative-links)      RELLINKS="yes";shift;;
+        --release-name)        BASERELVER="$2";shift 2;;
         --release-only|-o)     PACKOPT="rel";shift;;
         --release-path)        MAINRELPATH="$2";shift 2;;
         --release-setup)       RELSETPATH="$2";shift 2;;
@@ -5380,7 +5433,7 @@ if [ "$ATLAS" == "" ] ; then
       [ "$REQPRJNAME" == "" ] && REQPRJNAME="AtlasOffline"
     elif [ "$PRJTYPE" == "tdaq" ] ; then
         case $ARCH in
-            *_slc6_*) ATLAS="https://atlas-tdaq-sw.web.cern.ch/atlas-tdaq-sw/yum/tdaq/slc6/";;
+            *_slc6_*) ATLAS="http://atlas-tdaq-sw.web.cern.ch/atlas-tdaq-sw/yum/tdaq/slc6/";;
             *) ATLAS="http://atlas-tdaq-sw.web.cern.ch/atlas-tdaq-sw/download/apt/tdaq-new/tdaq/";;
         esac
     elif [ "$PRJTYPE" == "ext" ] ; then
@@ -5434,7 +5487,7 @@ elif [ "`echo $ARCH | grep ^_`" != "" -a "$PRJNAME" != "release" -a "$PRJNAME" !
     ATLASRELEASE="${PRJNAME}-${REL}"
   else
     REL="`echo ${RELEASE} | sed "s#\.#_#g"`"
-    [ "$PRJTYPE" != "ext" ] && ARCH1="`echo ${ARCH} | sed -e 's/43[5-9]$/43/' -e 's/46[0-9]$/46/'`" || ARCH1="$ARCH"
+    [ "$PRJTYPE" != "ext" ] && ARCH1="`echo ${ARCH} | sed 's/4\([3-9]\)[0-9]$/4\1/g'`" || ARCH1="$ARCH"
     ATLASRELEASE="${PRJNAME}_${REL}${ARCH1}"
     [ "$PRJOPT" != "" -a "$NOOPT" != "yes" ] && ATLASRELEASE="${ATLASRELEASE}_${PRJOPT}"
   fi
@@ -5465,8 +5518,8 @@ if [ "$ACTION" == "validate" -o "$ACTION" == "install" -o "$ACTION" == "test" -o
     if [ "$ACTION" == "validate" -o "$ACTION" == "install" ] ; then
         [ "$USEPACBALL" == "yes" ] && SKIPSETUP="yes"
     fi
-    [ "$PRJTYPE" == "poolcond" ] && SKIPSETUP="yes"
-    # Skip the pacman setup if we're installing and using pacballs
+    [ "$PRJTYPE" == "poolcond" -o "$PRJTYPE" == "cvmfsnightly" ] && SKIPSETUP="yes"
+    # Skip the pacman setup if we're installing and using pacballs or handing CVMFS nightlies
     if [ "$SKIPSETUP" == "" -a "`which pacman 2>/dev/null`" == "" ] ; then    
         setupPacman
         let rc=$rc+$?
@@ -5525,7 +5578,8 @@ fi
 # Save the environment
 export ENVSTART="/tmp/sw-mgr-envstart.tmp.$$"
 msgOut INFO "Saving the installation environment in $ENVSTART"
-/usr/bin/env | grep '=' | cut -d'=' -f 1 | egrep -v '^_$|^\s|^	|^$' | while read var; do echo "$var='`/usr/bin/printenv $var`'"; done > $ENVSTART
+#/usr/bin/env | grep '=' | cut -d'=' -f 1 | egrep -v '^_$|^\s|^	|^$' | while read var; do echo "$var='`/usr/bin/printenv $var`'"; done > $ENVSTART
+export -p | sed 's/^[^=]* \([^ ]*=\)/\1/;/^_=/d' > $ENVSTART
 [ "$LD_LIBRARY_PATH" == "" ] && echo "unset LD_LIBRARY_PATH" >> $ENVSTART
 [ "$PYTHONPATH" == "" ] && echo "unset PYTHONPATH" >> $ENVSTART
 
@@ -5670,8 +5724,11 @@ if [ "$ACTION" == "install" -o "$ACTION" == "validate" ] ; then
                 if [ "$SWAREAFS" == "cvmfs" -a "$PRJTYPE" == "poolcond" ] ; then
                     msgOut INFO "Skipping validation of $PRJTYPE because we are in CVMFS"
                 else
+                    msgOut INFO "Starting validation [$rc]"
                     validate
-                    let rc=$rc+$?
+                    vrc=$?
+                    let rc=$rc+$vrc
+                    msgOut INFO "Validation exit code [$vrc] , overall exit code [$rc]"
                 fi
             else
                 msgOut INFO "Skipping validation due to previous errors"
