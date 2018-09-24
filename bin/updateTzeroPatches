@@ -1,0 +1,93 @@
+#!/bin/sh
+
+# Configuration scripts
+[ -f "$PWD/.arelinstrc" ] && INSTCONF="$PWD/.arelinstrc"
+[ -f "$HOME/.arelinstrc" ] && INSTCONF="$HOME/.arelinstrc"
+
+DEST="/cvmfs/atlas.cern.ch/repo/sw/tzero/patches"
+SRC="/afs/cern.ch/atlas/tzero/cvmfspatches"
+if [ -s "$INSTCONF" ] ; then
+    DEST="`grep -i ^TzeroPatchesPath= $INSTCONF | cut -d= -f 2`"
+    CHANGELOG="`grep -i ^ChangeLog= $INSTCONF | cut -d= -f 2`"
+    USERNAME="`grep -i ^UserName= $INSTCONF | cut -d= -f 2`"
+    CVMFSTRANSACTION="`grep -i ^cvmfs_transaction= $INSTCONF | cut -d= -f 2`"
+    CVMFSABORT="`grep -i ^cvmfs_abort= $INSTCONF | cut -d= -f 2`"
+    CVMFSPUBLISH="`grep -i ^cvmfs_publish= $INSTCONF | cut -d= -f 2`"
+    MAILTO="`grep -i ^MailTo= $INSTCONF | cut -d= -f 2`"
+    TZEROMAILTO="`grep -i ^TzeroMailTo= $INSTCONF | cut -d= -f 2`"
+fi
+
+TRANSACTION=/tmp/tmp.transaction.$$
+
+rm -f ${TRANSACTION}*
+rc=0
+SRCDATE="`cat $SRC/lastupdate`"
+[ -s $DEST/lastupdate ] && DESTDATE="`cat $DEST/lastupdate`" || DESTDATE=0
+if [ -n "$SRCDATE" -a -n "$DESTDATE" -a $SRCDATE -gt $DESTDATE ] ; then
+    echo "Syncing Tzero Patches from $SRC to $DEST"
+    # Wait for the main lock
+    $HOME/bin/lock-install updateTzeroData
+    rc=$?
+    if [ $rc -ne 0 ]; then
+        exit $rc
+    fi
+    eval $CVMFSTRANSACTION
+    rsync -avz $SRC/ $DEST 2> ${TRANSACTION}.err
+    rc=$?
+    if [ $rc -eq 0 ] ; then
+        $HOME/bin/cvmfs-changelog --add "Tzero Patches $SRCDATE"
+        if [ $? -eq 0 ] ; then
+            echo "Tzero Patches $SRCDATE" > $TRANSACTION
+        else
+            echo "Cannot update ChangeLog for Tzero Patches $SRCDATE" > ${TRANSACTION}.err
+            cat ${TRANSACTION}.err
+        fi
+    else
+        cat ${TRANSACTION}.err
+    fi
+    # Publish changes
+    if [ -s $TRANSACTION ] ; then
+        [ -z "$CVMFSPUBLISH" ] && CVMFSPUBLISH="cvmfs_server publish atlas.cern.ch"
+        $CVMFSPUBLISH
+        if [ -n "$MAILTO" ] ; then
+            [ -n "$TZEROMAILTO" ] && MAILTO="${MAILTO},${TZEROMAILTO}"
+            echo "Sending notification"
+            mail -s "[ATLAS CVMFS UPDATE] `hostname`" "$MAILTO" <<EOD
+Dear admin,
+the following software has been installed in CVMFS @ `hostname`
+
+`cat $TRANSACTION`
+
+Regards,
+
+     Your faithful installation agent
+EOD
+        fi
+    else
+        [ -n "$CVMFSABORT" ] && $CVMFSABORT
+        if [ -n "$MAILTO" ] ; then
+            echo "Sending notification"
+            mail -s "[ATLAS CVMFS ERROR] `hostname`" "$MAILTO" <<EOD
+Dear admin,
+the Tzero Patches $SRCDATE failed to install in CVMFS.
+Last error:
+
+`cat ${TRANSACTION}.err`
+
+Regards,
+
+     Your faithful installation agent
+EOD
+        fi
+    fi
+
+    # Clear the install lock
+    $HOME/bin/unlock-install
+
+    # Cleanup
+    rm -f ${TRANSACTION}*
+else
+    echo "No patches to synchronize"
+fi
+
+exit $rc

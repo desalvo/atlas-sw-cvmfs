@@ -1,0 +1,14 @@
+#!/bin/sh
+QNAME=$1
+[ -z "$QNAME" ] && exit 1
+
+BQUEUES="`which bqueues 2>/dev/null`"
+if [ -z "$BQUEUES" -a -s "/etc/lsf/lsf.conf" ] ; then
+    . /etc/lsf/lsf.conf
+    export PATH=$LSF_BINDIR:$PATH
+    BQUEUES="`which bqueues 2>/dev/null`"
+fi
+[ -n "$BQUEUES" ] && BQUEUESRES="`bqueues $QNAME 2> /dev/null | grep "^${QNAME} " | awk '{print int($4)","int($9)","int($10)","int($11)}'`"
+[ -n "$BQUEUESRES" ] && echo $BQUEUESRES
+
+exit

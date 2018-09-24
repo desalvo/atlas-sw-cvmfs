@@ -1,6 +1,6 @@
 #!/bin/bash
 
-VERSION="sw-mgr v0.250.1 - 20170310"
+VERSION="sw-mgr v0.213.0 - 20120725"
 help() {
     cat <<EOD
 Usage: `basename $0` [OPTION]
@@ -12,7 +12,6 @@ Usage: `basename $0` [OPTION]
    --override-lock                    Override the locks in the caches
    --help|-h                          Display this help
    --debug                            Enable debug output
-   --ignore-install-errs              Ignore installation errors
    --install|-i <release number>      Install the selected release
    --validate|-V <release number>     Install and test the selected release
    --update|-u                        Update the selected release
@@ -62,7 +61,6 @@ Usage: `basename $0` [OPTION]
    --no-compat-patch                  Exclude compatibility patches
    --no-new-pacball                   Inhibit new pacball creation
    --post-siteinfo                    Post site info to $POSTSITEURL
-   --post-siteurl <URL>               Use <URL> to post the site info
    --pacball                          Use pacballs instead of snapshots
    --pacball-repo <URL>               Web repository for the pacballs
                                       (default: $PACBALLREPO)
@@ -101,21 +99,19 @@ Usage: `basename $0` [OPTION]
                                       or link it to <path>
    --project <project name>|-P        Use project <project name>
    --project-type <type>|-T           Use project type <type>
-                                      <type> = release      -> production releases
-                                      <type> = bugfix       -> bugfix nightlies
-                                      <type> = dev          -> dev nightlies
-                                      <type> = p1nightly    -> point1 nightlies
-                                      <type> = patch        -> production patches
-                                      <type> = p1patch      -> point1 patches
-                                      <type> = t0patch      -> Tier0 patches
-                                      <type> = eventview    -> PAT/EventView patches
-                                      <type> = tdaq         -> TDAQ releases
-                                      <type> = cvmfsnightly -> cvmfs nightlies
+                                      <type> = release   -> production releases
+                                      <type> = bugfix    -> bugfix nightlies
+                                      <type> = dev       -> dev nightlies
+                                      <type> = p1nightly -> point1 nightlies
+                                      <type> = patch     -> production patches
+                                      <type> = p1patch   -> point1 patches
+                                      <type> = t0patch   -> Tier0 patches
+                                      <type> = eventview -> PAT/EventView patches
+                                      <type> = tdaq      -> TDAQ releases
    --project-opt <option>|-O          Use optimization <option>
                                       <option> = opt -> optimized mode
                                       <option> = dbg -> debug mode
    --site-config <path>               Use <path> to store the site configuration
-   --site-type <type>                 Specify the site type (analysis, production, ...)
    --snap|-s <release number>         Create a snapshot for the selected release
    --snapname <snapshot name>         Use <snapshot name> for the snapshot
                                       file name
@@ -133,7 +129,6 @@ Usage: `basename $0` [OPTION]
    --query|-q                         Query the available (local) releases
    --quiet|-Q                         Disable verbose output
    --xml|-x <file name>               Generate an XML report of the installation
-   --kvpath <path>                    Use a local copy of KV from <path>
    --kvpost                           Post the test results to the GKV portal
    --kv-cache <cache>                 Use the <cache> KitValidation cache
    --kv-conf <URL>                    Use <URL> to get the KV configuration
@@ -152,8 +147,6 @@ Usage: `basename $0` [OPTION]
                                       in the installation setup scripts
    --set-frontier                     Set the FRONTIER_SERVER in AtlasSite,
                                       if \$ATLAS_FRONTIER_CONF is found
-   --stagein <URL>                    Download <URL> to the local working dir.
-                                      <URL> can be a comma separated list of values.
    --validation-exe <file>            Use <file> to validate the installation
 
 $VERSION
@@ -181,7 +174,7 @@ xml() {
            echo $XMLSTR >> $XMLFILE
        fi
        if [ "$XMLCMD" == "open" ] ; then
-           echo "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"no\" ?>" > $XMLFILE
+           echo "<?xml version="1.0" encoding="UTF-8"?>" > $XMLFILE
            echo "<install>" >> $XMLFILE
        fi
        if [ "$XMLCMD" == "close" ] ; then
@@ -196,9 +189,9 @@ timeout () {
 
 getFSType() {
     MOUNTPOINT="${1}"
-    MOUNTPOINTFS="`df -T -P ${MOUNTPOINT} 2>/dev/null | grep -v ^Filesystem | tail -n 1 | awk '{print $2}'`"
+    MOUNTPOINTFS="`df -T -P ${MOUNTPOINT} 2>/dev/null | tail -n 1 | awk '{print $2}'`"
     if [ "$MOUNTPOINTFS" == "fuse" ] ; then
-      MOUNTPOINTFS="`df -T -P ${MOUNTPOINT} 2>/dev/null | grep -v ^Filesystem | tail -n 1 | awk '{print $1}' | cut -d# -f 1`"
+      MOUNTPOINTFS="`df -T -P ${MOUNTPOINT} 2>/dev/null | tail -n 1 | awk '{print $1}' | cut -d# -f 1`"
     fi
     # Consider all mount starting with /cvmfs as CVMFS
     #[ -z "$MOUNTPOINTFS" -a "`echo $MOUNTPOINT | sed 's#/\([^/]*\)/.*#\1#'`" == "cvmfs" ] && MOUNTPOINTFS="cvmfs"
@@ -227,7 +220,7 @@ getDiskFree() {
         if [ "$MOUNTPOINTFS" == "afs" ] ; then
             MOUNTPOINTDF="`fs listquota ${MOUNTPOINT} | tail -n 1 | awk '{print $2-$3}'`"
         else
-            MOUNTPOINTDF="`df -k -P ${MOUNTPOINT} 2>/dev/null | grep -v ^Filesystem | tail -n 1 | awk '{print $4}'`"
+            MOUNTPOINTDF="`df -k -P ${MOUNTPOINT} 2>/dev/null | tail -n 1 | awk '{print $4}'`"
         fi
     else
         # Return an high value for bad sites
@@ -246,13 +239,13 @@ isSharedFS() {
 
 swareaInfo() {
     MOUNTPOINT="${1}"
-    MPINFO="`df -T -P ${MOUNTPOINT} 2>/dev/null | grep -v ^Filesystem | tail -n 1`"
+    MPINFO="`df -T -P ${MOUNTPOINT} 2>/dev/null | tail -n 1`"
     MPAREA="`echo ${MPINFO} | awk '{print $1}'`"
     # Quick fix for AFS
     #[ "$MPAREA" == "AFS" ] && MPAREA="$MOUNTPOINT"
     MPFS="`echo ${MPINFO} | awk '{print $2}'`"
     if [ "$MPFS" == "fuse" ] ; then
-      MPFS="`df -T -P ${MOUNTPOINT} 2>/dev/null | grep -v ^Filesystem | tail -n 1 | awk '{print $1}' | cut -d# -f 1`"
+      MPFS="`df -T -P ${MOUNTPOINT} 2>/dev/null | tail -n 1 | awk '{print $1}' | cut -d# -f 1`"
     fi
     # Consider all mount starting with /cvmfs as CVMFS
     [ "`echo $MOUNTPOINT | sed 's#/\([^/]*\)/*.*#\1#'`" == "cvmfs" ] && MPFS="cvmfs"
@@ -269,7 +262,7 @@ swareaInfo() {
 
 getSWarea() {
     MOUNTPOINT="${1}"
-    MPINFO="`df -T -P ${MOUNTPOINT} 2>/dev/null | grep -v ^Filesystem | tail -n 1`"
+    MPINFO="`df -T -P ${MOUNTPOINT} 2>/dev/null | tail -n 1`"
     MPAREA="`echo ${MPINFO} | awk '{print $1}'`"
     echo "${MPAREA}"
     return 0
@@ -277,7 +270,6 @@ getSWarea() {
 
 showSiteInfo() {
     msgOut INFO "======================="
-    msgOut INFO "sw-mgr v$VERSION"
     msgOut INFO "Resource info"
     msgOut INFO "Timestamp:  `date`"
     msgOut INFO "Running as: `whoami`"
@@ -286,22 +278,6 @@ showSiteInfo() {
     [ -n "$SHELL" ] && msgOut INFO "Shell:      $SHELL"
     [ "`which lsb_release 2> /dev/null`" != "" ] && msgOut INFO "`lsb_release -d`"
     msgOut INFO "======================="
-    printenv
-}
-
-hostEquiv() {
-    if [ -n "`which lsb_release 2> /dev/null`" ] ; then
-        LSBDESC="`lsb_release -sd | sed 's/"//g'`"
-        LSBVER="`lsb_release -sr | sed 's/"//g' | cut -d. -f 1`"
-        case $LSBDESC in
-            Scientific\ Linux*) echo "host-slc$LSBVER"
-                ;;
-            Red\ Hat\ Enterprise*) echo "host-slc$LSBVER"
-                ;;
-            CentOS*) echo "host-slc$LSBVER"
-                ;;
-        esac
-    fi
 }
 
 isInstalled() {
@@ -383,10 +359,10 @@ checkSite() {
     fi
     if [ "$RELSHAREDFS" == "no" -a "$REQSHAREDFS" == "yes" ] ; then
         msgOut ERROR "The directory $RELLOC is not in a shared filesystem"
-        msgOut INFO "[FS INFO] `df -T -P ${RELLOC} 2>/dev/null | grep -v ^Filesystem | tail -n 1`"
+        msgOut INFO "`df -T -P ${RELLOC} 2>/dev/null | tail -n 1`"
         let checkrc=110
     fi
-    if [ "$PRJTYPE" != "patch" -a "$PRJTYPE" != "p1patch" -a "$PRJTYPE" != "t0patch" -a "$PRJTYPE" != "eventview" -a "$PRJTYPE" != "analysis" -a "$PRJTYPE" != "cvmfsnightly" -a "$PRJTYPE" != "tdaq" ] ; then
+    if [ "$PRJTYPE" != "patch" -a "$PRJTYPE" != "p1patch" -a "$PRJTYPE" != "t0patch" -a "$PRJTYPE" != "eventview" -a "$PRJTYPE" != "analysis" -a "$PRJTYPE" != "tdaq" ] ; then
         SWSHAREDFS="`isSharedFS $SWLOC`"
         SWDF="`getDiskFree ${SWLOC}`"
         if [ $ISINSTALLED -eq 0 -a "`getFSType $RELLOC`" != "cvmfs" ] ; then
@@ -399,7 +375,7 @@ checkSite() {
         fi
         if [ "$SWSHAREDFS" == "no" -a "$REQSHAREDFS" == "yes" ] ; then
             msgOut ERROR "The directory $SWLOC is not in a shared filesystem"
-            msgOut INFO "[FS INFO] `df -T -P ${SWLOC} 2>/dev/null | grep -v ^Filesystem | tail -n 1`"
+            msgOut INFO "`df -T -P ${SWLOC} 2>/dev/null | tail -n 1`"
             let checkrc=110
         fi
     fi
@@ -465,23 +441,14 @@ checkSite() {
 }
 
 
-osinfo() {
-    if [ -s /cvmfs/atlas.cern.ch/repo/sw/python/latest/setup.sh ] ; then
-        (. /cvmfs/atlas.cern.ch/repo/sw/python/latest/setup.sh && python -c 'import platform,urllib; d,v,r=platform.linux_distribution(); print "osname=%s&osver=%s&osrel=%s" % (urllib.quote(d),urllib.quote(v),urllib.quote(r))')
-    else
-        echo "osname=&osver=&osrel="
-    fi
-}
-
 postSiteInfo() {
     SWAREAINFO="`swareaInfo $RELLOC`"
-    OSINFO="`osinfo`"
-    curl --connect-timeout 300 --insecure -s -S --data "cename=${TAGHOST}&${SWAREAINFO}&$OSINFO" ${POSTSITEURL}
+    curl --connect-timeout 300 --insecure -s -S --data "cename=${TAGHOST}&${SWAREAINFO}" ${POSTSITEURL}
     psirc=$?
     if [ $psirc -eq 0 ] ; then
-        msgOut INFO "Site info posted successfully: cename=${TAGHOST}&${SWAREAINFO}&$OSINFO"
+        msgOut INFO "Site info posted successfully: cename=${TAGHOST}&${SWAREAINFO}"
     else
-        msgOut INFO "Failed to post site info: cename=${TAGHOST}&${SWAREAINFO}&$OSINFO ${POSTSITEURL}"
+        msgOut INFO "Failed to post site info: cename=${TAGHOST}&${SWAREAINFO} ${POSTSITEURL}"
     fi
     return $psirc
 }
@@ -617,14 +584,9 @@ getDDMFile() {
     let getrc=0
 
     # Setup the DDM
-    if [ -n "$DDMSETUP" -a -n "$OSG_APP" -a -s "$OSG_APP/atlas_app/atlaswn/setup.sh" ] ; then
-        DDMSETUP="$OSG_APP/atlas_app/atlaswn/setup.sh"
-        msgOut INFO "Overriding the DDM location with $DDMSETUP"
-    fi
     if [ "$DDMSETUP" != "" -a -s "$DDMSETUP" ] ; then
         source $DDMSETUP
         if [ $? -eq 0 ] ; then
-            [ -z "$DQ2_LOCAL_SITE_ID" ] && export DQ2_LOCAL_SITE_ID="ROAMING"
             msgOut INFO "DDM configured from $DDMSETUP"
             msgOut INFO "Using DQ2_LOCAL_SITE_ID=$DQ2_LOCAL_SITE_ID"
             msgOut INFO "`voms-proxy-info -all`"
@@ -1013,7 +975,7 @@ pacball() {
             rm -fr ${PBDIR_TMP}/*
             msgOut INFO "Cannot find any pacball called ${PBNAME}"
             msgOut INFO "Trying to download it from ${PACBALLREPO}"
-            timeout 20s wget -T 20 -q ${PACBALLREPO}/${PBNAME}
+            wget -q ${PACBALLREPO}/${PBNAME}
             if [ $? -eq 0 -a -s $PWD/$PBNAME ] ; then
                 msgOut INFO "Pacball downloaded to ${PWD}/${PBNAME}"
                 msgOut INFO "`\ls -l ${PWD}/${PBNAME}`"
@@ -1136,7 +1098,7 @@ pacball() {
 
 OSGTags() {
     local TU_OPTS=`getopt -o adlL:prtV -l add,ce:,debug,file:,list,location:,project:,remove,sc:,tags:,vo:,version -- "$@"`
-    if [ $? != 0 ] ; then echo "Terminating..."; return 1 ; fi
+    if [ $? != 0 ] ; then echo "Terminating..."; return -1 ; fi
     eval set -- "$TU_OPTS"
 
     # Defaults
@@ -1408,7 +1370,7 @@ prepareInstallDirs() {
         NEWPHYSPATH=1
     fi
     \find $RELLOC -maxdepth 1 -type d ! -perm -a+rx -exec chmod a+rx {} \;
-    if [ ! -d ${SWLOC} -a "${PRJTYPE}" != "patch" -a "${PRJTYPE}" != "p1patch" -a "$PRJTYPE" != "t0patch" -a "$PRJTYPE" != "eventview" -a "$PRJTYPE" != "analysis" -a "$PRJTYPE" != "cvmfsnightly" -a "$PRJTYPE" != "tdaq" -a "$SWLOC" != "$RELLOC" ] ; then
+    if [ ! -d ${SWLOC} -a "${PRJTYPE}" != "patch" -a "${PRJTYPE}" != "p1patch" -a "$PRJTYPE" != "t0patch" -a "$PRJTYPE" != "eventview" -a "$PRJTYPE" != "analysis" -a "$PRJTYPE" != "tdaq" -a "$SWLOC" != "$RELLOC" ] ; then
         msgOut ERROR "Missing logical installation dir (${SWLOC}). Trying to create it."
         mkdir -p "${SWLOC}"
         NEWLOGPATH=1
@@ -1453,7 +1415,7 @@ install() {
     # Release platform,arch and compiler
     REL_PLAT="`echo ${ARCH} | sed 's/^[_ ]\(.*\)_slc\([0-9]\)_gcc\([0-9]*\)/\2/g'`"
     REL_ARCH="`echo ${ARCH} | sed 's/^[_ ]\(.*\)_slc\([0-9]\)_gcc\([0-9]*\)/\1/g'`"
-    REL_COMP="`echo ${ARCH} | sed -e 's/^[_ ]\(.*\)_slc\([0-9]\)_gcc\([0-9]*\)/\3/g' -e 's/4\([3-9]\)[0-9]$/4\1/g'`"
+    REL_COMP="`echo ${ARCH} | sed 's/^[_ ]\(.*\)_slc\([0-9]\)_gcc\([0-9]*\)/\3/g'`"
 
     # Check for linked releases
     SKIPPHYSINST=0
@@ -1633,7 +1595,7 @@ install() {
     MAINRELVER="`echo $RELEASE | awk -F "." '{for (i=1;i<=3;i++) ver=sprintf("%s%02d",ver,$i)}END{print int(ver)}'`"
 
     # Handle the patches to releases and EventView caches
-    if [ "${PRJTYPE}" == "patch" -o "${PRJTYPE}" == "p1patch" -o "$PRJTYPE" == "t0patch" -o "${PRJTYPE}" == "p1nightly" -o "${PRJTYPE}" == "eventview" -o "$PRJTYPE" == "analysis" -o "$PRJTYPE" == "cvmfsnightly" ] ; then
+    if [ "${PRJTYPE}" == "patch" -o "${PRJTYPE}" == "p1patch" -o "$PRJTYPE" == "t0patch" -o "${PRJTYPE}" == "p1nightly" -o "${PRJTYPE}" == "eventview" -o "$PRJTYPE" == "analysis" ] ; then
         if [ "$PRJTYPE" == "analysis" -a "${REQPRJNAME}" != "AtlasOffline" ] ; then
             MAINRELEASE="`echo $RELEASE | cut -d "." -f 1-4`"
         else
@@ -1668,40 +1630,16 @@ install() {
         # Setup the release
         unset CMTPATH
         if [ -s "${RELPATH}/cmtsite/asetup.sh" -a $MAINRELVER -ge 160000 ] ; then
-            # Save the PATH, LD_LIBRARY_PATH and PYTHONPATH
-            OLD_PATH=$PATH
-            OLD_LD_LIBRARY_PATH=$LD_LIBRARY_PATH
-            OLD_PYTHONPATH=$PYTHONPATH
-            # Check the version of AtlasSetup in the release
-            ASETUP_VER="`cat ${RELPATH}/AtlasSetup/cmt/version.cmt | awk -F - '{ver=int(sprintf ("%2d%2d%2d",$2,$3,$4)); print ver}'`"
-            [ -z "$ASETUP_VER" ] && ASETUP_VER=0
-            if [ $ASETUP_VER -ge 609 ] ; then
-                # Use AtlasSetup from the release area
-                msgOut INFO "AtlasSetup: source ${RELPATH}/cmtsite/asetup.sh ${MAINRELEASE} ${RPNAME} ${PRJOPT} ${ARUNTIME_TAGS}"
-                source ${RELPATH}/cmtsite/asetup.sh ${MAINRELEASE} ${RPNAME} ${PRJOPT} ${ARUNTIME_TAGS}
-            else
-                # Use the external AtlasSetup or fallback to the one in the release
-                if [ -d "/cvmfs/atlas.cern.ch/repo/sw/AtlasSetup" ] ; then
-                    export AtlasSetup="/cvmfs/atlas.cern.ch/repo/sw/AtlasSetup"
-                elif [ -d "${VO_ATLAS_SW_DIR}/AtlasSetup" ] ; then
-                    export AtlasSetup="${VO_ATLAS_SW_DIR}/AtlasSetup"
-                else
-                    export AtlasSetup="${RELPATH}/AtlasSetup"
-                fi
-                alias asetup='source $AtlasSetup/scripts/asetup.sh'
-                msgOut INFO "AtlasSetup: source ${AtlasSetup}/scripts/asetup.sh ${MAINRELEASE} ${RPNAME} ${PRJOPT} ${ARUNTIME_TAGS}"
-                source ${AtlasSetup}/scripts/asetup.sh ${MAINRELEASE} ${RPNAME} ${PRJOPT} ${ARUNTIME_TAGS}
-            fi
-            # Always restore the old PATH, LD_LIBRARY_PATH and PYTHONPATH. Use the system python
-            export PATH=$OLD_PATH
-            export LD_LIBRARY_PATH=$OLD_LD_LIBRARY_PATH
-            export PYTHONPATH=$OLD_PYTHONPATH
+            # Use AtlasSetup
+            msgOut INFO "AtlasSetup: source ${RELPATH}/cmtsite/asetup.sh ${MAINRELEASE} ${RPNAME} ${PRJOPT} ${ARUNTIME_TAGS}"
+            source ${RELPATH}/cmtsite/asetup.sh ${MAINRELEASE} ${RPNAME} ${PRJOPT} ${ARUNTIME_TAGS}
+            # Always use the system python
             export PATH=/usr/bin:$PATH
         else
             ALREQ="`\ls -d ${RELPATH}/AtlasLogin/*/cmt/requirements 2> /dev/null | sort | tail -n 1`"
             if [ "$ALREQ" != "" ] ; then
                 # Get the early AtlasLogin patches, if any
-                timeout 20s wget -T 20 --spider --quiet ${ATLASLOGINPATCHURL}/${RELEASE}/requirements
+                wget --spider --quiet ${ATLASLOGINPATCHURL}/${RELEASE}/requirements
                 if [ $? -eq 0 ] ; then
                     msgOut INFO "Overwriting $ALREQ with ${ATLASLOGINPATCHURL}/${RELEASE}/requirements"
                     curl -S ${ATLASLOGINPATCHURL}/${RELEASE}/requirements > $ALREQ
@@ -1732,10 +1670,6 @@ install() {
     fi
 
     # Setup the DDM
-    if [ -n "$DDMSETUP" -a -n "$OSG_APP" -a -s "$OSG_APP/atlas_app/atlaswn/setup.sh" ] ; then
-        DDMSETUP="$OSG_APP/atlas_app/atlaswn/setup.sh"
-        msgOut INFO "Overriding the DDM location with $DDMSETUP"
-    fi
     if [ "$DDMSETUP" != "" -a -s "$DDMSETUP" ] ; then
         source $DDMSETUP
         if [ $? -eq 0 ] ; then
@@ -1750,11 +1684,10 @@ install() {
     # Start the installation
     cd "${SWPHYS}"
     msgOut INFO "Starting the installation"
-    msgOut INFO "Installation project type: ${PRJTYPE}"
     msgOut INFO "Installation type: ${PRJNAME}"
     msgOut INFO "PATH=${PATH}"
     msgOut INFO "Physical area: ${SWPHYS}"
-    [ "${PRJTYPE}" != "patch" -a "${PRJTYPE}" != "p1patch" -a "$PRJTYPE" != "t0patch" -a "${PRJTYPE}" != "eventview" -a "${PRJTYPE}" != "analysis" -a "${PRJTYPE}" != "cvmfsnightly" -a "$SWLOC" != "$RELLOC" -a "$PRJTYPE" != "tdaq" ] && \
+    [ "${PRJTYPE}" != "patch" -a "${PRJTYPE}" != "p1patch" -a "$PRJTYPE" != "t0patch" -a "${PRJTYPE}" != "eventview" -a "${PRJTYPE}" != "analysis" -a "$SWLOC" != "$RELLOC" -a "$PRJTYPE" != "tdaq" ] && \
     msgOut INFO "Logical area:  ${SWLOG}"
     msgOut INFO "Starting physical installation in ${PWD}"
     if [ "$DEBUG" == "yes" ] ; then
@@ -1780,11 +1713,10 @@ install() {
             [ ! -d ".rpmdb" ] && mkdir .rpmdb
             msgOut INFO "Starting the installation of ${ATLASRELEASE} via rpm"
             msgOut INFO "Downloading packages"
-            RPMPKGARCH="`echo $ARCH | sed 's/^_*\(.*\)_slc\([0-9]*\)_gcc\([0-9][0-9]\)[0-9]*/\1-slc\2-gcc\3/g'`-${PRJOPT}"
-            timeout 20s wget -T 20 -r -nd -Nd -l3 -erobots=off -P RPMCACHE -A "${ATLASRELEASE}*_${RPMPKGARCH}*rpm" -A "${ATLASRELEASE}*_noarch*rpm" -o rpmdownload.log ${ATLAS}
-            #let instrc=$instrc+$?
+            RPMPKGARCH="`echo $ARCH | sed -e 's/^_//' -e 's/_/-/g'`-${PRJOPT}"
+            wget -r -nd -Nd -l3 -erobots=off -P RPMCACHE -A "${ATLASRELEASE}*_${RPMPKGARCH}*rpm" -A "${ATLASRELEASE}*_noarch*rpm" ${ATLAS}
+            let instrc=$instrc+$?
             if [ $instrc -eq 0 ] ; then
-                rm -f rpmdownload.log
                 msgOut INFO "Installing packages"
                 rpm --nodeps --noscripts -Uhv --prefix=$PWD --dbpath $PWD/.rpmdb RPMCACHE/${ATLASRELEASE}*
                 let instrc=$instrc+$?
@@ -1795,19 +1727,8 @@ install() {
                     msgOut ERROR "Cannot install rpm packages"
                 fi
             else
-                msgOut ERROR "Cannot download tdaq packages. Error $instrc"
+                msgOut ERROR "Cannot download tdaq packages"
             fi
-        elif [ "${PRJTYPE}" == "cmake" ] ; then
-            if [ -z "`which ayum 2>/dev/null`" ] ; then
-                export PATH=$AYUM_DIR/bin:$PATH
-            fi
-            AYUM_ARCH="`echo $ARCH | sed -E 's/^_+(i686|x86_64).(slc[0-9]*|cc[0-9]*).(gcc[0-9][0-9])/\1-\2-\3/'`-$PRJOPT"
-            AYUM_REL="${PRJNAME}"
-            [ -z "$NOVERSION" ] && AYUM_REL="${AYUM_REL}_${RELEASE}_${AYUM_ARCH}"
-            msgOut INFO "Installing ${AYUM_REL}"
-            $AYUM_DIR/ayum -y install ${AYUM_REL}
-            [ -z "$IGNORE_INSTALL_ERRORS" ] && let instrc=$instrc+$?
-            $AYUM_DIR/ayum clean all
         else
             if [ "$PACMAN_OPTS" != "" -a "$USEPACBALL" != "yes" ] ; then
                 msgOut INFO "pacman $PACMAN_OPTS"
@@ -1905,7 +1826,7 @@ install() {
             for SYSTEM_ARCH in i686 x86_64; do
                 COMPILER_ARCH="`echo ${ARCH} | sed -e "s/i686/$SYSTEM_ARCH/g" -e "s/x86_64/$SYSTEM_ARCH/g"`"
                 COMPILER_VER="`echo ${COMPILER_ARCH} | sed 's/^[_ ]\(.*\)_slc\([0-9]\)_gcc\([0-9]*\)/\3/g'`"
-                # Use gcc 4.3.5 by default for releases >= 17.0.1, even if not specified
+                # Use gcc 4.3.5 for releases >= 17.0.1
                 if [ "$COMPILER_VER" == "43" -a $MAINRELVER -ge 170001 ] ; then
                     COMPILER_ARCH="`echo $COMPILER_ARCH | sed 's/gcc43/gcc435/g'`"
                     COMPILER_VER="435" 
@@ -1982,7 +1903,7 @@ EOCS
                             msgOut INFO "$SYSTEM_ARCH site compiler bin found in $COMPILER_BIN"
                             msgOut INFO "$SYSTEM_ARCH site compiler lib found in $COMPILER_LIB"
                             [ ! -d "${RELPATH}/AtlasSite/gcc-links" ] && mkdir -p ${RELPATH}/AtlasSite/gcc-links
-                            COMPILER_LINK="${SYSTEM_ARCH}`echo ${ARCH} | sed -e 's/^_*i686//' -e 's/^_*x86_64//' -e 's/_/-/g' -e 's/4\([3-9]\)[0-9]$/4\1/g'`-opt"
+                            COMPILER_LINK="${SYSTEM_ARCH}`echo ${ARCH} | sed -e 's/^_*i686//' -e 's/^_*x86_64//' -e 's/_/-/g' -e 's/gcc435/gcc43/g'`-opt"
                             msgOut INFO "Linking `dirname ${COMPILER_BIN}` to ${RELPATH}/AtlasSite/gcc-links/${COMPILER_LINK}"
                             [ -L ${RELPATH}/AtlasSite/gcc-links/${COMPILER_LINK} ] && rm -f ${RELPATH}/AtlasSite/gcc-links/${COMPILER_LINK}
                             ln -sf `dirname ${COMPILER_BIN}` ${RELPATH}/AtlasSite/gcc-links/${COMPILER_LINK}
@@ -2127,35 +2048,16 @@ EOAS
                 fi
             fi
 
-            # Perform the post-install steps for AtlasProduction only
-            if [ "$PRJNAME" == "AtlasProduction" -a -s "${RELPATH}/cmtsite/asetup.sh" ] ; then
-                if [ -n "$POSTINSTALL" -o $MAINRELVER -gt 190100 ] ; then
-                    MAINRELEASE="`echo $RELEASE | cut -d "." -f 1-3`"
-                    CMTCONFIG_OPT="`echo ${ARCH} | sed -E 's/^_+(i686|x86_64).(slc[0-9]*).(gcc[0-9]*)/\1-\2-\3/'`-${PRJOPT}"
-                    (
-                        msgOut INFO "Running post-install scripts"
-                        msgOut INFO "Setting up the main release with . ${RELPATH}/cmtsite/asetup.sh AtlasOffline $MAINRELEASE --cmtconfig=$CMTCONFIG_OPT"
-                        . ${RELPATH}/cmtsite/asetup.sh AtlasOffline $MAINRELEASE --cmtconfig=$CMTCONFIG_OPT
-                        if [ -d "${RELPATH}/${PRJNAME}/$RELEASE/${PRJNAME}Release/cmt" ] ; then
-                           cd ${PRJNAME}/$RELEASE/${PRJNAME}Release/cmt
-                           msgOut INFO "Running post installation scripts from $PWD"
-                           cmt br - 'cmt -no_cleanup config'; cmt br - cmt post_install
-                        fi
-                        msgOut INFO "Post-install scripts completed"
-                    )
-                fi
-            fi
-
             # DQ2 clients patches
             rm -fr post-setup
             if [ "${PRJTYPE}" == "ext" -a "${PRJNAME}" == "DQ2Clients" ] ; then
-                timeout 20s wget -T 20 --spider --quiet ${DQ2SETUPURL}/${RELEASE}/setup-env.sh
+                wget --spider --quiet ${DQ2SETUPURL}/${RELEASE}/setup-env.sh
                 if [ $? -eq 0 ] ; then
                     mkdir post-setup
                     cd post-setup
                     msgOut INFO "Installing DQ2 helper scripts for release ${RELEASE}"
-                    timeout 20s wget -T 20 -r --no-parent -A "*.sh" --quiet -nd ${DQ2SETUPURL}/${RELEASE}/setup-env.sh
-                    timeout 20s wget -T 20 -r --no-parent -A "*.csh" --quiet -nd ${DQ2SETUPURL}/${RELEASE}/setup-env.sh
+                    wget -r --no-parent -A "*.sh" --quiet -nd ${DQ2SETUPURL}/${RELEASE}/setup-env.sh
+                    wget -r --no-parent -A "*.csh" --quiet -nd ${DQ2SETUPURL}/${RELEASE}/setup-env.sh
                     cd ..
                 else
                     msgOut INFO "No DQ2 helper scripts found for release ${RELEASE}"
@@ -2167,7 +2069,7 @@ EOAS
 
             if [ "$ALREQPATCHED" != "yes" ] ; then
                 # Get the AtlasLogin patches, if any
-                timeout 20s wget -T 20 --spider --quiet ${ATLASLOGINPATCHURL}/${RELEASE}/requirements
+                wget --spider --quiet ${ATLASLOGINPATCHURL}/${RELEASE}/requirements
                 if [ $? -eq 0 ] ; then
                     ALREQ="`\ls -d AtlasLogin/*/cmt/requirements | sort | tail -n 1`"
                     msgOut INFO "Overwriting $ALREQ with ${ATLASLOGINPATCHURL}/${RELEASE}/requirements"
@@ -2180,12 +2082,12 @@ EOAS
 
             if [ -d "AtlasSetup" ] ; then
                 # Get the AtlasSetup patches, if any
-                timeout 20s wget -T 20 --spider --quiet ${ATLASSETUPPATCHURL}/${RELEASE}/AtlasSetup-${RELEASE}.patch
+                wget --spider --quiet ${ATLASSETUPPATCHURL}/${RELEASE}/AtlasSetup-${RELEASE}.patch
                 if [ $? -eq 0 ] ; then
                     curl -s -S ${ATLASSETUPPATCHURL}/${RELEASE}/version.cmt > AtlasSetupVersion
                     diff -q AtlasSetupVersion AtlasSetup/cmt/version.cmt &> /dev/null
                     if [ $? -ne 0 ] ; then
-                        timeout 20s wget -T 20 -N -c --quiet ${ATLASSETUPPATCHURL}/${RELEASE}/AtlasSetup-${RELEASE}.patch
+                        wget -N -c --quiet ${ATLASSETUPPATCHURL}/${RELEASE}/AtlasSetup-${RELEASE}.patch
                         if [ -s "AtlasSetup-${RELEASE}.patch" ] ; then
                             msgOut INFO "Patching `cat AtlasSetup/cmt/version.cmt` with AtlasSetup-${RELEASE}.patch"
                             patch -p0 -N -s < AtlasSetup-${RELEASE}.patch
@@ -2314,7 +2216,7 @@ EOAS
 
     if [ $SKIPLOGINST -eq 0 ] ; then
         # Create the logical installation for the selected release
-        if [ "${PRJTYPE}" != "patch" -a "${PRJTYPE}" != "p1patch" -a "$PRJTYPE" != "t0patch" -a "${PRJTYPE}" != "eventview" -a "${PRJTYPE}" != "analysis" -a "$PRJTYPE" != "cvmfsnightly" -a "$PRJTYPE" != "tdaq" -a "${SWLOC}" != "${RELLOC}" ] ; then
+        if [ "${PRJTYPE}" != "patch" -a "${PRJTYPE}" != "p1patch" -a "$PRJTYPE" != "t0patch" -a "${PRJTYPE}" != "eventview" -a "${PRJTYPE}" != "analysis" -a "$PRJTYPE" != "tdaq" -a "${SWLOC}" != "${RELLOC}" ] ; then
             [ "`which pacman 2>/dev/null`" == "" ] && setupPacman
             cd "${SWLOG}"
             msgOut INFO "Starting the logical installation in ${PWD}"
@@ -2353,13 +2255,13 @@ EOAS
             # DQ2 clients patches
             rm -fr post-setup
             if [ "${PRJTYPE}" == "ext" -a "${PRJNAME}" == "DQ2Clients" ] ; then
-                timeout 20s wget -T 20 --spider --quiet ${DQ2SETUPURL}/${RELEASE}/setup-env.sh
+                wget --spider --quiet ${DQ2SETUPURL}/${RELEASE}/setup-env.sh
                 if [ $? -eq 0 ] ; then
                     mkdir post-setup
                     cd post-setup
                     msgOut INFO "Installing DQ2 helper scripts for release ${RELEASE}"
-                    timeout 20s wget -T 20 -r --no-parent -A "*.sh" --quiet -nd ${DQ2SETUPURL}/${RELEASE}/setup-env.sh
-                    timeout 20s wget -T 20 -r --no-parent -A "*.csh" --quiet -nd ${DQ2SETUPURL}/${RELEASE}/setup-env.sh
+                    wget -r --no-parent -A "*.sh" --quiet -nd ${DQ2SETUPURL}/${RELEASE}/setup-env.sh
+                    wget -r --no-parent -A "*.csh" --quiet -nd ${DQ2SETUPURL}/${RELEASE}/setup-env.sh
                     cd ..
                 else
                     msgOut INFO "No DQ2 helper scripts found for release ${RELEASE}"
@@ -2415,7 +2317,7 @@ EOAS
                 TMPDQ2PATCH=/tmp/tmp.install.dq2patch.$$
                 mkdir $TMPDQ2PATCH
                 cd $TMPDQ2PATCH
-                timeout 20s wget -T 20 $OSGDQ2PATCH
+                wget $OSGDQ2PATCH
                 tar xfz `basename $OSGDQ2PATCH`
                 if [ -n "$DDMSITE" -a -s "Ls.py-$DDMSITE" ] ; then
                     DQ2PATCHDEST="`\ls -d ${SWPHYS}/DQ2Clients/usr/lib/python*/site-packages/dq2/clientapi/cli/Ls.py 2>/dev/null | tail -n 1`"
@@ -2434,7 +2336,7 @@ EOAS
             fi
         fi
     fi
-    if [ "$PRJTYPE" != "ext" -a "${PRJTYPE}" != "eventview" -a "${PRJTYPE}" != "poolcond" -a "${PRJTYPE}" != "dbrelease" -a "${PRJTYPE}" != "tdaq" -a "${PRJTYPE}" != "cmake" ] ; then
+    if [ "$PRJTYPE" != "ext" -a "${PRJTYPE}" != "eventview" -a "${PRJTYPE}" != "poolcond" -a "${PRJTYPE}" != "dbrelease" -a "${PRJTYPE}" != "tdaq" ] ; then
         if [ "$PRJNAME" == "release" -o "$PRJNAME" == "AtlasRelease" ] ; then
             source setup.sh
             msgOut INFO "Setting up runtime enviroment from ${SITEROOT}/dist/${RELEASE}/Control/AthenaRunTime"
@@ -2444,12 +2346,7 @@ EOAS
             [ -z "$SITEROOT" ] && SITEROOT="$RELPATH"
             if [ -s ${RELPATH}/cmtsite/setup.sh -o -s ${RELPATH}/cmtsite/asetup.sh ] ; then
                 if [ -s ${RELPATH}/cmtsite/asetup.sh ] ; then
-                    SLC_VER="`echo ${ARCH} | sed -e 's/^.*slc\([0-9]*\).*/\1/g'`"
-                    if [ $SLC_VER -lt 6 ] ; then
-                        GCC_VER="`echo ${ARCH} | sed -e 's/^.*\(gcc[0-9]*\).*/\1/g' -e 's/4\([3-9]\)[0-9]$/4\1/g'`"
-                    else
-                        GCC_VER="gcc"
-                    fi
+                    GCC_VER="`echo ${ARCH} | sed 's/^.*\(gcc[0-9]*\).*/\1/g'`"
                     if [ -f ${RELPATH}/cmtsite/asetup_defaults ] ; then
                         # Modify the asetup defaults
                         msgOut INFO "Adding gcc to the AtlasSetup default file ${RELPATH}/cmtsite/asetup_defaults"
@@ -2474,7 +2371,7 @@ EOD
                         sed -i -e "s#^\(source.*AtlasSetup.*\)\( \-\-input.*\)#\1#g" -e "s#^source.*AtlasSetup.*#\0 --input $SITESETUP#" ${RELPATH}/cmtsite/asetup.sh
                     fi
                 fi
-                if [ "${PRJTYPE}" != "patch" -a "${PRJTYPE}" != "p1patch" -a "$PRJTYPE" != "t0patch" -a "$PRJTYPE" != "analysis" -a "$PRJTYPE" != "cvmfsnightly" -a "$PRJTYPE" != "tdaq" -a $SKIPLOGINST -eq 0 ] ; then
+                if [ "${PRJTYPE}" != "patch" -a "${PRJTYPE}" != "p1patch" -a "$PRJTYPE" != "t0patch" -a "$PRJTYPE" != "analysis" -a "$PRJTYPE" != "tdaq" -a $SKIPLOGINST -eq 0 ] ; then
                     # Set some additional tags
                     RUNTIME_TAGS=",gcc${REL_COMP},slc${REL_PLAT}"
                     [ "$REL_ARCH" == "i686" ] && RUNTIME_TAGS="${RUNTIME_TAGS},32" || RUNTIME_TAGS="${RUNTIME_TAGS},64"
@@ -2491,7 +2388,7 @@ EOD
                         # Create the setup-release.sh hub
                         REL_ARCH="`echo ${ARCH} | sed 's/^[_ ]\(.*\)_slc\([0-9]\)_gcc\([0-9]*\)/\1/g'`"
                         REL_PLAT="`echo ${ARCH} | sed 's/^[_ ]\(.*\)_slc\([0-9]\)_gcc\([0-9]*\)/\2/g'`"
-                        REL_COMP="`echo ${ARCH} | sed -e 's/^[_ ]\(.*\)_slc\([0-9]\)_gcc\([0-9]*\)/\3/g' -e 's/4\([3-9]\)[0-9]$/4\1/g'`"
+                        REL_COMP="`echo ${ARCH} | sed 's/^[_ ]\(.*\)_slc\([0-9]\)_gcc\([0-9]*\)/\3/g'`"
                         rm -fr cmtsite
                         mkdir -p cmtsite
 cat > cmtsite/setup.sh <<EOSR
@@ -2617,7 +2514,7 @@ EOSR
                                 prc=0
                                 for f in ${COMPATPATCH[@]}; do
                                     rm -f ${f}
-                                    timeout 20s wget -T 20 ${COMPATURL}/${f}
+                                    wget ${COMPATURL}/${f}
                                     let prc=$prc+$?
                                 done
                                 if [ $prc -eq 0 ] ; then
@@ -2645,7 +2542,7 @@ EOSR
                                     prc=0
                                     for f in ${SL5RTPATCH[@]}; do
                                         rm -f ${f}
-                                        timeout 20s wget -T 20 ${SL5RTURL}/${f}
+                                        wget ${SL5RTURL}/${f}
                                         let prc=$prc+$?
                                         if [ $prc -eq 0 ] ; then
                                             tar xvfz ${f} | grep so$ | awk '{print $NF}' | while read pf; do ln -sf ../`basename $PWD`/$pf ../python; done
@@ -2750,24 +2647,26 @@ EOSR
                         done
                     fi
                     [ -n "$SITEROOT" ] && SITEROOT="`getRWpath ${SITEROOT}`"
-                    if [ -d $SITEROOT/${PRJNAME}/${RELEASE}/${PRJNAME}RunTime/cmt ] ; then
-                        msgOut INFO "Setting up runtime enviroment from $SITEROOT/${PRJNAME}/${RELEASE}/${PRJNAME}RunTime"
-                        cd $SITEROOT/${PRJNAME}/${RELEASE}/${PRJNAME}RunTime/cmt
-                        if [ ! -s setup.sh ] ; then
-                            msgOut WARNING "No setup file found. Trying to configure..."
-                            cd $SITEROOT/${PRJNAME}/${RELEASE}/${PRJNAME}Release/cmt
-                            cmt -quiet br - 'cmt -quiet -no_cleanup config'
+                    if [ "$PRJTYPE" != "analysis" ] ; then
+                        if [ -d $SITEROOT/${PRJNAME}/${RELEASE}/${PRJNAME}RunTime/cmt ] ; then
+                            msgOut INFO "Setting up runtime enviroment from $SITEROOT/${PRJNAME}/${RELEASE}/${PRJNAME}RunTime"
                             cd $SITEROOT/${PRJNAME}/${RELEASE}/${PRJNAME}RunTime/cmt
                             if [ ! -s setup.sh ] ; then
-                                msgOut ERROR "Cannot configure the package"
+                                msgOut WARNING "No setup file found. Trying to configure..."
+                                cd $SITEROOT/${PRJNAME}/${RELEASE}/${PRJNAME}Release/cmt
+                                cmt -quiet br - 'cmt -quiet -no_cleanup config'
+                                cd $SITEROOT/${PRJNAME}/${RELEASE}/${PRJNAME}RunTime/cmt
+                                if [ ! -s setup.sh ] ; then
+                                    msgOut ERROR "Cannot configure the package"
+                                else
+                                    source setup.sh
+                                fi
                             else
                                 source setup.sh
                             fi
                         else
-                            source setup.sh
+                            msgOut INFO "Cannot setup runtime enviroment from $SITEROOT/${PRJNAME}/${RELEASE}/${PRJNAME}RunTime"
                         fi
-                    else
-                        msgOut INFO "Cannot setup runtime enviroment from $SITEROOT/${PRJNAME}/${RELEASE}/${PRJNAME}RunTime"
                     fi
                 fi
             else
@@ -2779,7 +2678,7 @@ EOSR
 
     # End-of-run tasks
     if [ $instrc -eq 0 ] ; then
-        if [ "$PRJTYPE" != "ext" -a "$PRJTYPE" != "eventview" -a "${PRJTYPE}" != "poolcond" -a "${PRJTYPE}" != "dbrelease" -a "${PRJTYPE}" != "tdaq" -a "${PRJTYPE}" != "cmake" -a $SKIPPHYSINST -eq 0 ] ; then
+        if [ "$PRJTYPE" != "ext" -a "$PRJTYPE" != "eventview" -a "${PRJTYPE}" != "poolcond" -a "${PRJTYPE}" != "dbrelease" -a "${PRJTYPE}" != "tdaq" -a $SKIPPHYSINST -eq 0 ] ; then
             [ "`which SealPluginRefresh 2>/dev/null`" != "" ] && SealPluginRefresh
             [ "`which cmt 2>/dev/null`" != "" ] && cmt build library_links
         fi
@@ -2887,8 +2786,7 @@ validate() {
     let validrc=0
     # Reset the environment
     ENVLAST="/tmp/sw-mgr-envlast.tmp.$$"
-    #/usr/bin/env | grep '=' | cut -d'=' -f 1 | egrep -v '^_$|^\s|^	|^$' | while read var; do echo "$var='`/usr/bin/printenv $var`'"; done > $ENVLAST
-    export -p | sed 's/^[^=]* \([^ ]*=\)/\1/;/^_=/d' > $ENVSTART
+    /usr/bin/env | grep '=' | cut -d'=' -f 1 | egrep -v '^_$|^\s|^	|^$' | while read var; do echo "$var='`/usr/bin/printenv $var`'"; done > $ENVLAST
     if [ -s $ENVSTART ] ; then
         echo "ENVLAST=\"$ENVLAST\"" >> $ENVSTART
         msgOut INFO "Resetting the environment from $ENVSTART"
@@ -2954,13 +2852,6 @@ validate() {
                 msgOut INFO "Project directory ${SWPHYS}/${PRJNAME}/${RELEASE} found"
             else
                 msgOut ERROR "No directory ${SWPHYS}/${PRJNAME}/${RELEASE} found"
-                validrc=1
-            fi
-        elif [ "${PRJTYPE}" == "cvmfsnightly" ] ; then
-            if [ -d "${SWPHYS}" ] ; then
-                msgOut INFO "CVMFS nightly directory ${SWPHYS} found"
-            else
-                msgOut ERROR "No directory ${SWPHYS} found"
                 validrc=1
             fi
         elif [ "${PRJTYPE}" == "tdaq" ] ; then
@@ -3029,18 +2920,13 @@ validate() {
             fi
         else
             # Main release version
-            if [ -z "${BASERELVER}" ] ; then
-                KVRELVER="$RELEASE"
-            else
-                KVRELVER="$BASERELVER"
-            fi
-            MAINRELVER="`echo $KVRELVER | awk -F "." '{for (i=1;i<=3;i++) ver=sprintf("%s%02d",ver,$i)}END{print int(ver)}'`"
+            MAINRELVER="`echo $RELEASE | awk -F "." '{for (i=1;i<=3;i++) ver=sprintf("%s%02d",ver,$i)}END{print int(ver)}'`"
 
             # Let's run KitValidation
             if [ "${PRJNAME}" == "AtlasRelease" -o "${PRJNAME}" == "release" ] ; then
                 KVBUILD_OPTS=""
             else
-                RELSERIAL="`echo $KVRELVER | cut -d "." -f 1-3 | awk -F. '{printf "%d",$1; for(i=2;i<=NF;i++) printf "%03d", $i;}'`"
+                RELSERIAL="`echo $RELEASE | cut -d "." -f 1-3 | awk -F. '{printf "%d",$1; for(i=2;i<=NF;i++) printf "%03d", $i;}'`"
                 if [ "${PRJNAME}" == "AtlasOffline" -a $RELSERIAL -lt 13000030 -a $RELSERIAL -gt 0 ] ; then
                     KVBUILD_OPTS="--project AtlasProduction"
                 else
@@ -3053,15 +2939,13 @@ validate() {
             [ "${PRJTYPE}" == "p1patch" ] && KVRELTYPE=":p1" || KVRELTYPE=""
             [ "${PRJTYPE}" == "t0patch" ] && KVRELTYPE=":t0" || KVRELTYPE=""
             [ "${PRJTYPE}" == "eventview" ] && KVRELTYPE=":ev" || KVRELTYPE=""
-            KVRELBASE="`echo $KVRELVER | cut -d "." -f 1-3`"
+            KVRELBASE="`echo $RELEASE | cut -d "." -f 1-3`"
             if [ "$DEBUG" == "yes" ] ; then
                 msgOut DEBUG "PATH=${PATH}"
                 msgOut DEBUG "LD_LIBRARY_PATH=${LD_LIBRARY_PATH}"
                 msgOut DEBUG "PYTHONPATH=${PYTHONPATH}"
             fi
-            if [ -z "$KVPATH" ] ; then
-                [ "`which pacman 2>/dev/null`" == "" ] && setupPacman
-            fi
+            [ "`which pacman 2>/dev/null`" == "" ] && setupPacman
             msgOut INFO "Starting validation of release $RELEASE"
 
             # Override the DB release if needed
@@ -3091,36 +2975,23 @@ validate() {
             fi
 
             KVBASEDIR="${KVRELBASE}"
-            if [ -n "$KVPATH" -a -d "$KVPATH/KitValidation" ] ; then
-                ln -s $KVPATH/* .
-            else
-                msgOut WARNING "No directory $KVPATH/KitValidation found"
-            fi
-            if [ ! -d "$KVPATH/KitValidation" ] ; then
-                msgOut INFO "Executing pacman $PACMAN_OPTS -get ${LCGCACHE}:${KVBASEDIR}/KitValidation"
+            msgOut INFO "Executing pacman $PACMAN_OPTS -get ${LCGCACHE}:${KVBASEDIR}/KitValidation"
+            pacman $PACMAN_OPTS -get ${LCGCACHE}:${KVBASEDIR}/KitValidation
+            if [ $? -ne 0 ] ; then
+                msgOut WARNING "Failed to get the KV setup from ${LCGCACHE}:${KVBASEDIR}/KitValidation"
+                KVBASEDIR="generic"
+                msgOut WARNING "Trying with pacman $PACMAN_OPTS -get ${LCGCACHE}:${KVBASEDIR}/KitValidation"
                 pacman $PACMAN_OPTS -get ${LCGCACHE}:${KVBASEDIR}/KitValidation
-                if [ $? -ne 0 ] ; then
-                    msgOut WARNING "Failed to get the KV setup from ${LCGCACHE}:${KVBASEDIR}/KitValidation"
-                    KVBASEDIR="generic"
-                    msgOut WARNING "Trying with pacman $PACMAN_OPTS -get ${LCGCACHE}:${KVBASEDIR}/KitValidation"
-                    pacman $PACMAN_OPTS -get ${LCGCACHE}:${KVBASEDIR}/KitValidation
-                    let validrc=$validrc+$?
-                fi
-                msgOut INFO "Executing pacman $PACMAN_OPTS -get ${LCGCACHE}:${KVBASEDIR}/KitValidationPatches"
-                pacman $PACMAN_OPTS -get ${LCGCACHE}:${KVBASEDIR}/KitValidationPatches
+                let validrc=$validrc+$?
             fi
+            msgOut INFO "Executing pacman $PACMAN_OPTS -get ${LCGCACHE}:${KVBASEDIR}/KitValidationPatches"
+            pacman $PACMAN_OPTS -get ${LCGCACHE}:${KVBASEDIR}/KitValidationPatches
             [ $? -eq 0 ] && source setup.sh
-            KVDISREL="KVDISABLE_`echo $RELEASE | sed 's/\./_/g'`"
-            KVDISRELVAL="`eval echo \\$$KVDISREL`"
-
-            # Use CMTUSERCONTEXT to overcome compilation problems with SL5 binaries on SL6
-            [ -z "$CMTUSERCONTEXT" ] && export CMTUSERCONTEXT=/cvmfs/atlas.cern.ch/repo/tools/slc6/cmt
-
             [ "$PRJTYPE" == "analysis" -a "${REQPRJNAME}" != "AtlasOffline" ] && KVRELBASE="`echo $RELEASE | cut -d "." -f 1-4`"
             if [ "$KVBUILD_OPTS" != "" -a $validrc -eq 0 ] ; then
                 REL_ARCH="`echo ${ARCH} | sed 's/^[_ ]\(.*\)_slc\([0-9]\)_gcc\([0-9]*\)/\1/g'`"
                 REL_PLAT="`echo ${ARCH} | sed 's/^[_ ]\(.*\)_slc\([0-9]\)_gcc\([0-9]*\)/\2/g'`"
-                REL_COMP="`echo ${ARCH} | sed -e 's/^[_ ]\(.*\)_slc\([0-9]\)_gcc\([0-9]*\)/\3/g' -e 's/4\([3-9]\)[0-9]$/4\1/g'`"
+                REL_COMP="`echo ${ARCH} | sed 's/^[_ ]\(.*\)_slc\([0-9]\)_gcc\([0-9]*\)/\3/g'`"
                 # Set some additional tags
                 RUNTIME_TAGS=",gcc${REL_COMP},slc${REL_PLAT}"
                 [ "$REL_ARCH" == "i686" ] && RUNTIME_TAGS="${RUNTIME_TAGS},32" || RUNTIME_TAGS="${RUNTIME_TAGS},64"
@@ -3128,22 +2999,7 @@ validate() {
                 [ "$REL_ARCH" == "i686" ] && ARUNTIME_TAGS="${ARUNTIME_TAGS} 32" || ARUNTIME_TAGS="${ARUNTIME_TAGS} 64"
 
                 if [ -s ${SWRELPATH}/cmtsite/asetup.sh -a $MAINRELVER -ge 160000 ] ; then
-                    # Check the version of AtlasSetup in the release
-                    ASETUP_VER="`cat ${SWRELPATH}/AtlasSetup/cmt/version.cmt | awk -F - '{ver=int(sprintf ("%2d%2d%2d",$2,$3,$4)); print ver}'`"
-                    [ -z "$ASETUP_VER" ] && ASETUP_VER=0
-                    if [ $ASETUP_VER -ge 609 ] ; then
-                        SETUPCMD="source ${SWRELPATH}/cmtsite/asetup.sh "
-                    else
-                        # Use the external AtlasSetup or fallback to the one in the release
-                        if [ -d "/cvmfs/atlas.cern.ch/repo/sw/AtlasSetup" ] ; then
-                            export AtlasSetup="/cvmfs/atlas.cern.ch/repo/sw/AtlasSetup"
-                        elif [ -d "${VO_ATLAS_SW_DIR}/AtlasSetup" ] ; then
-                            export AtlasSetup="${VO_ATLAS_SW_DIR}/AtlasSetup"
-                        else
-                            export AtlasSetup="${SWRELPATH}/AtlasSetup"
-                        fi
-                        SETUPCMD="source ${AtlasSetup}/scripts/asetup.sh --releasesarea=${SWRELPATH} "
-                    fi
+                    SETUPCMD="source ${SWRELPATH}/cmtsite/asetup.sh "
                 else
                     SETUPCMD="source ${SWRELPATH}/cmtsite/setup.sh -tag="
                 fi
@@ -3151,19 +3007,17 @@ validate() {
                 if [ "${PRJTYPE}" == "p1nightly" ] ; then
                     msgOut INFO "Setting up the point1 nightly release from $PWD"
                     if [ -s ${SWRELPATH}/cmtsite/asetup.sh -a $MAINRELVER -ge 160000 ] ; then
-                        msgOut INFO "${SETUPCMD}${ASETUP_DBOPT}${PRJNAME} ${KVRELVER} ${PRJOPT} ${ARUNTIME_TAGS} runtime"
-                        eval ${SETUPCMD}${ASETUP_DBOPT}${PRJNAME} ${KVRELVER} ${PRJOPT} ${ARUNTIME_TAGS} runtime
+                        msgOut INFO "${SETUPCMD}${ASETUP_DBOPT}${PRJNAME} ${RELEASE} ${PRJOPT} ${ARUNTIME_TAGS} runtime"
+                        eval ${SETUPCMD}${ASETUP_DBOPT}${PRJNAME} ${RELEASE} ${PRJOPT} ${ARUNTIME_TAGS} runtime
                     else
-                        msgOut INFO "${SETUPCMD}${PRJNAME},${KVRELVER},${PRJOPT}${RUNTIME_TAGS},runtime"
-                        eval ${SETUPCMD}${PRJNAME},${KVRELVER},${PRJOPT}${RUNTIME_TAGS},runtime
+                        msgOut INFO "${SETUPCMD}${PRJNAME},${RELEASE},${PRJOPT}${RUNTIME_TAGS},runtime"
+                        eval ${SETUPCMD}${PRJNAME},${RELEASE},${PRJOPT}${RUNTIME_TAGS},runtime
                     fi
-                elif [ "${PRJTYPE}" == "cvmfsnightly" ] ; then
-                    msgOut INFO "Skipping setup for CVMFS nightlies"
                 elif [ "${PRJTYPE}" == "patch" -o "${PRJTYPE}" == "p1patch" -o "$PRJTYPE" == "t0patch" -o "${PRJTYPE}" == "eventview" -o "${PRJTYPE}" == "analysis" -a "$PRJTYPE" != "tdaq" ] ; then
                     msgOut INFO "Setting up the release from $PWD"
                     if [ -s ${SWRELPATH}/cmtsite/asetup.sh -a $MAINRELVER -ge 160000 ] ; then
-                        msgOut INFO "${SETUPCMD}${ASETUP_DBOPT}${REQPRJNAME} ${KVRELBASE} ${PRJOPT} ${ARUNTIME_TAGS}"
-                        eval ${SETUPCMD}${ASETUP_DBOPT}${REQPRJNAME} ${KVRELBASE} ${PRJOPT} ${ARUNTIME_TAGS}
+                        msgOut INFO "${SETUPCMD}${ASETUP_DBOPT}${REQPRJNAME} ${KVRELBASE} ${PRJOPT} ${ARUNTIME_TAGS} runtime"
+                        eval ${SETUPCMD}${ASETUP_DBOPT}${REQPRJNAME} ${KVRELBASE} ${PRJOPT} ${ARUNTIME_TAGS} runtime
                     else
                         msgOut INFO "${SETUPCMD}${REQPRJNAME},${KVRELBASE},${PRJOPT}${RUNTIME_TAGS},runtime"
                         eval ${SETUPCMD}${REQPRJNAME},${KVRELBASE},${PRJOPT}${RUNTIME_TAGS},runtime
@@ -3171,11 +3025,11 @@ validate() {
                 else
                     msgOut INFO "Setting up the release from $PWD"
                     if [ -s ${SWRELPATH}/cmtsite/asetup.sh -a $MAINRELVER -ge 160000 ] ; then
-                        msgOut INFO "${SETUPCMD}${ASETUP_DBOPT}${PRJNAME} ${KVRELVER} ${PRJOPT} ${ARUNTIME_TAGS}"
-                        eval ${SETUPCMD}${ASETUP_DBOPT}${PRJNAME} ${KVRELVER} ${PRJOPT} ${ARUNTIME_TAGS}
+                        msgOut INFO "${SETUPCMD}${ASETUP_DBOPT}${PRJNAME} ${RELEASE} ${PRJOPT} ${ARUNTIME_TAGS}"
+                        eval ${SETUPCMD}${ASETUP_DBOPT}${PRJNAME} ${RELEASE} ${PRJOPT} ${ARUNTIME_TAGS}
                     else
-                        msgOut INFO "${SETUPCMD}${PRJNAME},${KVRELVER},${PRJOPT}${RUNTIME_TAGS}"
-                        eval ${SETUPCMD}${PRJNAME},${KVRELVER},${PRJOPT}${RUNTIME_TAGS}
+                        msgOut INFO "${SETUPCMD}${PRJNAME},${RELEASE},${PRJOPT}${RUNTIME_TAGS}"
+                        eval ${SETUPCMD}${PRJNAME},${RELEASE},${PRJOPT}${RUNTIME_TAGS}
                     fi
                 fi
                 if [ "${PRJTYPE}" == "patch" -o "${PRJTYPE}" == "p1patch" -o "$PRJTYPE" == "t0patch" ] ; then
@@ -3200,24 +3054,23 @@ validate() {
                 elif [ "${PRJTYPE}" == "eventview" ] ; then
                     msgOut INFO "Using EventView version $RELEASE from $PWD"
                     setupDev "-tag=${REQPRJNAME},${KVRELBASE}${RUNTIME_TAGS},groupArea,runtime"
+                    #validrc=$?
                     validrc=1
                 elif [ "${PRJTYPE}" == "analysis" ] ; then
                     msgOut INFO "Skipping additional setup since we are using an analysis project"
-                elif [ "${PRJTYPE}" == "cvmfsnightly" ] ; then
-                    msgOut INFO "Skipping additional setup since we are using a CVMFS nighlty"
                 elif [ "${PRJTYPE}" == "tdaq" ] ; then
                     msgOut INFO "Skipping additional setup since we are using tdaq"
                 else
-                    msgOut INFO "Using plain release $KVRELVER from $PWD"
+                    msgOut INFO "Using plain release $RELEASE from $PWD"
                     [ "`which pacman 2>/dev/null`" == "" ] && setupPacman
                     msgOut INFO "Executing pacman $PACMAN_OPTS -get ${LCGCACHE}:${KVBASEDIR}/KitValidationPyJTPatches"
                     pacman $PACMAN_OPTS -get ${LCGCACHE}:${KVBASEDIR}/KitValidationPyJTPatches
                     if [ -s ${SWRELPATH}/cmtsite/asetup.sh -a $MAINRELVER -ge 160000 ] ; then
-                        msgOut INFO "Setting up the main release runtime: ${SETUPCMD}${ASETUP_DBOPT}${PRJNAME} ${KVRELVER} ${PRJOPT} ${ARUNTIME_TAGS} runtime"
-                        eval ${SETUPCMD}${ASETUP_DBOPT}${PRJNAME} ${KVRELVER} ${PRJOPT} ${ARUNTIME_TAGS} runtime
+                        msgOut INFO "Setting up the main release runtime: ${SETUPCMD}${ASETUP_DBOPT}${PRJNAME} ${RELEASE} ${PRJOPT} ${ARUNTIME_TAGS} runtime"
+                        eval ${SETUPCMD}${ASETUP_DBOPT}${PRJNAME} ${RELEASE} ${PRJOPT} ${ARUNTIME_TAGS} runtime
                     else
-                        msgOut INFO "Setting up the main release runtime: ${SETUPCMD}${PRJNAME},${KVRELVER},${PRJOPT}${RUNTIME_TAGS},runtime"
-                        eval ${SETUPCMD}${PRJNAME},${KVRELVER},${PRJOPT}${RUNTIME_TAGS},runtime
+                        msgOut INFO "Setting up the main release runtime: ${SETUPCMD}${PRJNAME},${RELEASE},${PRJOPT}${RUNTIME_TAGS},runtime"
+                        eval ${SETUPCMD}${PRJNAME},${RELEASE},${PRJOPT}${RUNTIME_TAGS},runtime
                     fi
                     if [ -d $PWD/AtlasProduction/*/AtlasProductionRunTime/cmt ] ; then
                         EPREL="`find $PWD/AtlasProduction -maxdepth 1 -exec basename {} \; | tail -n 1`"
@@ -3246,13 +3099,9 @@ validate() {
                     # Global test disable
                     [ "$KVDISABLE" != "" ] && KVDISABLE_OPTS=" --disable $KVDISABLE"
                     # Per-release test disable
-                    [ -z "$KVDISREL" ] && KVDISREL="KVDISABLE_`echo $RELEASE | sed 's/\./_/g'`"
-                    [ -z "$KVDISRELVAL" ] && KVDISRELVAL="`eval echo \\$$KVDISREL`"
+                    KVDISREL="KVDISABLE_`echo $RELEASE | sed 's/\./_/g'`"
+                    KVDISRELVAL="`eval echo \\$$KVDISREL`"
                     [ "$KVDISRELVAL" != "" ] && KVDISABLE_OPTS=" --disable $KVDISRELVAL"
-                    # Switch off the compilation suite if the site type is not production
-                    if [ -n "$SITETYPE" -a "$SITETYPE" != "analysis" ] ; then
-                        [ -z "$KVD" ] && KVD="compilation" || KVD="${KVD},compilation"
-                    fi
                     # Other disables
                     if [ "$KVD" != "" ] ; then
                         if [ "$KVDISABLE_OPTS" != "" ] ; then
@@ -3293,17 +3142,12 @@ validate() {
                     fi
                     [ "$KVNOAUTO" == "y" ] && KVNOAUTO_OPTS=" --no-auto"
                     msgOut INFO "Starting KV (thread #${kvthr}/${TESTTHR})..."
-                    msgOut INFO "SITEROOT=$SITEROOT"
                     msgOut INFO "${KVHOME}/KitValidation -r ${RELEASE}${KVRELTYPE} -p ${SWRELPATH} -gkvn --bw -t ${PWD} ${KVBUILD_OPTS}${KVDISABLE_OPTS}${KVADDSEARCH}${KVPOSTTAG_OPTS}${KVCONFURL_OPTS}${KVENABLE_OPTS}${KVNOAUTO_OPTS}"
                     if [ "$DEBUG" == "yes" ] ; then
                         msgOut DEBUG "PATH=${PATH}"
                         msgOut DEBUG "LD_LIBRARY_PATH=${LD_LIBRARY_PATH}"
                         msgOut DEBUG "PYTHONPATH=${PYTHONPATH}"
                     fi
-
-                    # Force running with a single process, even when ATHENA_PROC_NUMBER is set
-                    [ -n "$ATHENA_PROC_NUMBER" ] && unset ATHENA_PROC_NUMBER
-
                     (${KVHOME}/KitValidation -r ${RELEASE}${KVRELTYPE} -p ${SWRELPATH} -gkvn --bw \
                      -t ${PWD} ${KVBUILD_OPTS}${KVDISABLE_OPTS}${KVADDSEARCH}${KVPOSTTAG_OPTS}${KVCONFURL_OPTS}${KVENABLE_OPTS}${KVNOAUTO_OPTS}; \
                      echo $? > ${TTDIR}.rc) &
@@ -3393,16 +3237,6 @@ remove() {
         else
             msgOut INFO "No directory $PRJNAME found"
         fi
-    elif [ "$PRJTYPE" == "cmake" ] ; then
-        if [ -z "`which ayum 2>/dev/null`" ] ; then
-            export PATH=$AYUM_DIR/bin:$PATH
-        fi
-        AYUM_ARCH="`echo $ARCH | sed -E 's/^_+(i686|x86_64).(slc[0-9]*|cc[0-9]*).(gcc[0-9][0-9])/\1-\2-\3/'`-$PRJOPT"
-        AYUM_REL="${PRJNAME}"
-        [ -z "$NOVERSION" ] && AYUM_REL="${AYUM_REL}_${RELEASE}_${AYUM_ARCH}"
-        msgOut INFO "Removing ${AYUM_REL}"
-        $AYUM_DIR/ayum -y remove ${AYUM_REL}
-        removerc=$?
     else
         # Setup the release and check the physical install path
         if [ -s "${RELPATH}/cmtsite/asetup.sh" -a $MAINRELVER -ge 160000 ] ; then
@@ -3455,14 +3289,11 @@ remove() {
                 msgOut INFO "Trying with release $RELEASE in $RELLOCFOUND"
 
                 # Check if any patch is installed
-                if [ "$RELLOCFOUND" != "" -a "$PRJTYPE" != "patch" -a "${PRJTYPE}" != "p1patch" -a "$PRJTYPE" != "t0patch" -a "${PRJTYPE}" != "eventview" -a "$PRJTYPE" != "analysis" -a "$PRJTYPE" != "cvmfsnightly" -a "$PRJTYPE" != "tdaq" ] ; then
+                if [ "$RELLOCFOUND" != "" -a "$PRJTYPE" != "patch" -a "${PRJTYPE}" != "p1patch" -a "$PRJTYPE" != "t0patch" -a "${PRJTYPE}" != "eventview" -a "$PRJTYPE" != "analysis" -a "$PRJTYPE" != "tdaq" ] ; then
                     msgOut INFO "Detecting patches for $RELEASE"
                     cd "${RELLOC}"
-                    PATCHRELARCH="`echo $ARCH | sed 's/^_//g'`"
-                    #PATCHPATTERN="Atlas.*_`echo $RELEASE | sed 's#\.#_#g'`_[[:digit:]+].*"
-                    #INSTALLED_PATCHES="`pacman -lc -d none | grep "$PATCHPATTERN" | cut -d "_" -f 2-5 | sed 's#_#\.#g' | sort | uniq`"
-                    PATCHPATTERN=".*_`echo $RELEASE | sed 's#\.#_#g'`_[[:digit:]+]_${PATCHRELARCH}.*"
-                    INSTALLED_PATCHES="`pacman -lc -d none | grep "$PATCHPATTERN" | awk '{print $2}' | sort | uniq | tr '\n' '.'`"
+                    PATCHPATTERN="Atlas.*_`echo $RELEASE | sed 's#\.#_#g'`_[[:digit:]+].*"
+                    INSTALLED_PATCHES="`pacman -lc -d none | grep "$PATCHPATTERN" | cut -d "_" -f 2-5 | sed 's#_#\.#g' | sort | uniq`"
                     if [ "$INSTALLED_PATCHES" != "" ] ; then
                         msgOut ERROR "The following patches to ${RELEASE} are installed"
                         msgOut ERROR "`echo ${INSTALLED_PATCHES} | sed 's# #,#g'`"
@@ -3647,7 +3478,7 @@ remove() {
 
         # Remove the logical installation, unless we're processing patches or we do not have it
         cd "${TOPDIR}"
-        if [ "$PRJTYPE" != "patch" -a "${PRJTYPE}" != "p1patch" -a "$PRJTYPE" != "t0patch" -a "${PRJTYPE}" != "eventview" -a "$PRJTYPE" != "analysis" -a "$PRJTYPE" != "cvmfsnightly" -a "$PRJTYPE" != "tdaq" -a "${SWLOC}" != "none" -a "$SWLOC" != "$RELLOC" ] ; then
+        if [ "$PRJTYPE" != "patch" -a "${PRJTYPE}" != "p1patch" -a "$PRJTYPE" != "t0patch" -a "${PRJTYPE}" != "eventview" -a "$PRJTYPE" != "analysis" -a "$PRJTYPE" != "tdaq" -a "${SWLOC}" != "none" -a "$SWLOC" != "$RELLOC" ] ; then
             if [ -d ${SWLOC} ] ; then
                 SWLOC="`getRWpath ${SWLOC}`"
                 msgOut INFO "Removing logical installation from ${SWLOC}"
@@ -3689,7 +3520,7 @@ remove() {
         # List the software area contents
         SWLOCPATH="`dirname ${SWLOC}`" 
         RELLOCPATH="`dirname ${RELLOC}`" 
-        if [ "${PRJTYPE}" != "patch" -a "${PRJTYPE}" != "p1patch" -a "$PRJTYPE" != "t0patch" -a "${PRJTYPE}" != "eventview" -a "$PRJTYPE" != "analysis" -a "$PRJTYPE" != "cvmfsnightly" -a "$PRJTYPE" != "tdaq" -a "$SWLOC" != "none" -a "$SWLOC" != "$RELLOC" ] ; then
+        if [ "${PRJTYPE}" != "patch" -a "${PRJTYPE}" != "p1patch" -a "$PRJTYPE" != "t0patch" -a "${PRJTYPE}" != "eventview" -a "$PRJTYPE" != "analysis" -a "$PRJTYPE" != "tdaq" -a "$SWLOC" != "none" -a "$SWLOC" != "$RELLOC" ] ; then
             msgOut INFO "Showing contents of the logical installation path (${SWLOCPATH})"
             msgOut INFO "`\ls ${SWLOCPATH}`"
         fi
@@ -3732,8 +3563,7 @@ addTag() {
     # Reset the environment
     ENVLAST="/tmp/sw-mgr-envlast.tmp.$$"
     #/usr/bin/printenv | grep -v '^_=' | sed -e "s/\([^=]\)=/\1='/" -e "s/$/'/g" > $ENVLAST
-    #/usr/bin/env | grep '=' | cut -d'=' -f 1 | egrep -v '^_$|^\s|^	|^$' | while read var; do echo "$var='`/usr/bin/printenv $var`'"; done > $ENVLAST
-    export -p | sed 's/^[^=]* \([^ ]*=\)/\1/;/^_=/d' > $ENVLAST
+    /usr/bin/env | grep '=' | cut -d'=' -f 1 | egrep -v '^_$|^\s|^	|^$' | while read var; do echo "$var='`/usr/bin/printenv $var`'"; done > $ENVLAST
     if [ -s $ENVSTART ] ; then
         echo "ENVLAST=\"$ENVLAST\"" >> $ENVSTART
         msgOut INFO "Resetting the environment from $ENVSTART"
@@ -3840,16 +3670,10 @@ addTag() {
             fi
             if [ -n "$TAGSCNAME" -a "$TAGSCNAME" != "$TAGHOST" ] ; then
                 DUMPTAGS="${DUMPTAGS}-${TAGSCNAME}"
-                DUMPTAGSDIR="`dirname ${DUMPTAGS}`"
-                if [ "`getFSType $DUMPTAGSDIR`" == "cvmfs" ] ; then
-                    msgOut INFO "No tag dump for CVMFS"
-                else
-                    msgOut INFO "Dumping subcluster tags into $DUMPTAGS"
-                    $TAG_UTILITY --sc $TAGSCNAME --vo $TAGVO --list $TF_OPT > $DUMPTAGS
-                fi
+                msgOut INFO "Dumping subcluster tags into $DUMPTAGS"
+                $TAG_UTILITY --sc $TAGSCNAME --vo $TAGVO --list $TF_OPT > $DUMPTAGS
             else
-                DUMPTAGSDIR="`dirname ${DUMPTAGS}`"
-                if [ "`getFSType $DUMPTAGSDIR`" == "cvmfs" ] ; then
+                if [ -f "$DUMPTAGS" -a "`getFSType $DUMPTAGS`" == "cvmfs" ] ; then
                     msgOut INFO "No tag dump for CVMFS"
                 else
                     msgOut INFO "Dumping cluster tags into $DUMPTAGS"
@@ -3885,8 +3709,7 @@ removeTag() {
     # Reset the environment
     ENVLAST="/tmp/sw-mgr-envlast.tmp.$$"
     #/usr/bin/printenv | grep -v '^_=' | sed -e "s/\([^=]\)=/\1='/" -e "s/$/'/g" > $ENVLAST
-    #/usr/bin/env | grep '=' | cut -d'=' -f 1 | egrep -v '^_$|^\s|^	|^$' | while read var; do echo "$var='`/usr/bin/printenv $var`'"; done > $ENVLAST
-    export -p | sed 's/^[^=]* \([^ ]*=\)/\1/;/^_=/d' > $ENVLAST
+    /usr/bin/env | grep '=' | cut -d'=' -f 1 | egrep -v '^_$|^\s|^	|^$' | while read var; do echo "$var='`/usr/bin/printenv $var`'"; done > $ENVLAST
     if [ -s $ENVSTART ] ; then
         echo "ENVLAST=\"$ENVLAST\"" >> $ENVSTART
         msgOut INFO "Resetting the environment from $ENVSTART"
@@ -4105,20 +3928,15 @@ genPoolcondPFC() {
     # Set up the ddm helper
     [ -z "$DDMHELPER" ] && setDDMhelper
 
-    # Override the dq2 configuration if a file dq2.cfg in present in the current working dir or in the installation top dir
+    # Override the dq2 configuration if a file dq2.cfg in present in the current working dir
     if [ -s $TOPDIR/dq2.cfg ] ; then
-        DQ2OVERRIDE="$TOPDIR/dq2.cfg"
-    elif [ -s $INSTALLER_HOME/dq2.cfg ] ; then
-        DQ2OVERRIDE="$INSTALLER_HOME/dq2.cfg"
-    else
-        msgOut INFO "No DQ2 overrides found in $TOPDIR or $INSTALLER_HOME"
-    fi
-    if [ -n "$DQ2OVERRIDE" ] ; then
         msgOut INFO "Overriding the default DQ2 configuration with ~/.dq2/etc/dq2.cfg"
         mkdir -p ~/.dq2/etc
-        cp $DQ2OVERRIDE ~/.dq2/etc
+        cp $TOPDIR/dq2.cfg ~/.dq2/etc
         msgOut INFO "DQ2URL: `grep '^url=' ~/.dq2/etc/dq2.cfg`"
         [ -f /var/tmp/.dq2${USER}/ToACache.py ] && rm -f /var/tmp/.dq2${USER}/ToACache.py
+    else
+        msgOut INFO "No DQ2 overrides found in $TOPDIR"
     fi
 
     # Generate a Poolcond PFC for the local site
@@ -4451,25 +4269,16 @@ setLocalConfig() {
         fi
     fi
 
-    # Guess the emi-version file location
-    [ -n "$GLITE_LOCATION" ] && EMIVERSION="`readlink -f $GLITE_LOCATION/../etc/emi-version`" || EMIVERSION="/etc/emi-version"
-    msgOut INFO "GLITE_LOCATION=$GLITE_LOCATION ==> EMIVERSION=$EMIVERSION"
-
-    # Override the dq2 configuration if a file dq2.cfg in present in the current working dir or in the installation top dir
+    # Override the dq2 configuration if a file dq2.cfg in present in the current working dir
     if [ -n "$DQ2_HOME" ] ; then
         if [ -s $TOPDIR/dq2.cfg ] ; then
-            DQ2OVERRIDE="$TOPDIR/dq2.cfg"
-        elif [ -s $INSTALLER_HOME/dq2.cfg ] ; then
-            DQ2OVERRIDE="$INSTALLER_HOME/dq2.cfg"
-        else
-            msgOut INFO "No DQ2 overrides found in $TOPDIR or $INSTALLER_HOME"
-        fi
-        if [ -n "$DQ2OVERRIDE" ] ; then
             msgOut INFO "Overriding the default DQ2 configuration with ~/.dq2/etc/dq2.cfg"
             mkdir -p ~/.dq2/etc
-            cp $DQ2OVERRIDE ~/.dq2/etc
+            cp $TOPDIR/dq2.cfg ~/.dq2/etc
             msgOut INFO "DQ2URL: `grep '^url=' ~/.dq2/etc/dq2.cfg`"
             [ -f /var/tmp/.dq2${USER}/ToACache.py ] && rm -f /var/tmp/.dq2${USER}/ToACache.py
+        else
+            msgOut INFO "No DQ2 overrides found in $TOPDIR"
         fi
     fi
 
@@ -4491,31 +4300,6 @@ setLocalConfig() {
         [ ! -d ${LOCALCONF}/emi/lib64 ] && mkdir -p ${LOCALCONF}/emi/lib64
         TMPLOCALSETUP=${LOCALCONF}/setup.sh.tmp
         LOCALSETUP=${LOCALCONF}/setup.sh
-
-        # Wait for previous installation process completion
-        set -o noclobber
-        lock_retries=0
-        max_lock_retries=360
-        lock_retry_sleep=10
-        while [ $lock_retries -lt $max_lock_retries ] ; do
-            echo "# Local setup" 2> /dev/null > $TMPLOCALSETUP
-            lsr=$?
-            if [ $lsr -ne 0 ] ; then
-                msgOut WARNING "Cannot lock the installation area, waiting ${lock_retry_sleep}s"
-                let lock_retries=$lock_retries+1
-                sleep ${lock_retry_sleep}s
-            else
-                break
-            fi
-        done
-        set +o noclobber
-        if [ $lsr -ne 0 ] ; then
-            msgOut ERROR "Cannot lock the installation area after $lock_retries retries"
-            return 110
-        fi
-        msgOut INFO "Creating the local setup"
-
-        echo '[ -n "$GLITE_LOCATION" ] && EMIVERSION="`readlink -f $GLITE_LOCATION/../etc/emi-version`" || EMIVERSION="/etc/emi-version"' >> $TMPLOCALSETUP
         [ "$DDMSITE" == "" -a "$DQ2_LOCAL_SITE_ID" != "" ] && DDMSITE="`echo $DQ2_LOCAL_SITE_ID | sed 's/\(.*\)_\(.*\)/\1_HOTDISK/'`"
         [ "$GOCNAME" == "" -a "$DDMSITE" != "" ] && GOCNAME="`echo $DDMSITE | sed 's/\(.*\)_\([^_]*\)/\1/'`"
         if [ -n "$GOCNAME" ] ; then
@@ -4540,7 +4324,6 @@ setLocalConfig() {
             else
                 msgOut WARNING "Frontier setup for $GOCNAME is empty"
             fi
-            msgOut INFO "Using siteconf $SITECONF"
             eval $(LANG=C fgrep "ATLAS_POOLCOND_PATH=" ${SITECONF})
             if [ "$ATLAS_POOLCOND_PATH" != "" ] ; then
                 msgOut INFO "ATLAS_POOLCOND_PATH for $GOCNAME is $ATLAS_POOLCOND_PATH"
@@ -4596,14 +4379,13 @@ EOD
                     [ "$LIBTYPE" == 32 ] && cd ${LOCALCONF}${MWDIR}/lib || cd ${LOCALCONF}${MWDIR}/lib64
                     rm -f ${LIBNAME}.new
                     LIBNAME="`basename ${DCAPURL[$LIBTYPE]}`"
-                    timeout 20s wget -T 20 --no-verbose ${DCAPURL[$LIBTYPE]} -O ${LIBNAME}.new
-                    if [ $? -eq 0 -a -s ${LIBNAME}.new ] ; then
-                        chmod +x ${LIBNAME}.new
+                    wget --no-verbose ${DCAPURL[$LIBTYPE]} -O ${LIBNAME}.new
+                    chmod +x ${LIBNAME}.new
+                    if [ $? -eq 0 ] ; then
                         mv -f ${LIBNAME}.new ${LIBNAME}
-                        msgOut INFO "Updated $LIBTYPE bits $LIBNAME installed successfully in $PWD (`du -k ${LIBNAME} | awk '{print $1}'`k)"
+                        msgOut INFO "Updated $LIBTYPE bits $LIBNAME installed successfully in $PWD"
                     else
                         msgOut WARNING "Failed to get ${DCAPURL[$LIBTYPE]}"
-                        rm -f ${LIBNAME}.new
                         setlcrc=4
                     fi
                     cd -
@@ -4613,7 +4395,7 @@ EOD
             msgOut INFO "No patches needed for $SETYPE SE type."
         else
             for MWDIR in "" "/emi"; do
-                if [ -f $EMIVERSION -a -z "$MWDIR" ] ; then
+                if [ -f /etc/emi-version -a -z "$MWDIR" ] ; then
                     msgOut INFO "This is possibly a DPM site, guessing the glite rfio libraries from an emi node."
                     cd ${LOCALCONF}${MWDIR}/lib
                     LIBDPM32="/opt/lcg/lib/libdpm.so"
@@ -4624,7 +4406,7 @@ EOD
                     LIBDPM64="/opt/lcg/lib64/libdpm.so"
                     [ ! -f libshift.so ] && ln -sf $LIBDPM64 libshift.so
                     [ ! -f libshift.so.2.1 ] && ln -sf $LIBDPM64 libshift.so.2.1
-                elif [ ! -f $EMIVERSION -a "$MWDIR" == "/emi" ] ; then
+                elif [ ! -f /etc/emi-version -a "$MWDIR" == "/emi" ] ; then
                     msgOut INFO "This is possibly a DPM site, guessing the emi rfio libraries from a glite node."
                     cd ${LOCALCONF}${MWDIR}/lib
                     LIBDPM32="/usr/lib/libdpm.so"
@@ -4665,7 +4447,7 @@ EOD
                         msgOut WARNING "Cannot find the 64 bits libdpm.so in LCG_LOCATION/lib64 ($LCG_LOCATION/lib64)"
                     fi
                 fi
-                if [ ! -f $EMIVERSION ] ; then
+                if [ ! -f /etc/emi-version ] ; then
                     GSSAPILIBNAME=([32]="libglobus_gssapi_gsi_gcc32dbgpthr.so" [64]="libglobus_gssapi_gsi_gcc64dbgpthr.so")
                     GSSAPILIBLOCAL="libglobus_gssapi_gsi.so"
                     for LIBTYPE in 32 64; do
@@ -4700,7 +4482,7 @@ EOD
             done
             if [ -f "${LOCALCONF}/lib/${GSSAPILIBLOCAL}" ] ; then
                 LOCALCONFRO="`getROpath ${LOCALCONF}`"
-                echo 'if [ ! -f $EMIVERSION ] ; then' >> ${TMPLOCALSETUP}
+                echo "if [ ! -f /etc/emi-version ] ; then" >> ${TMPLOCALSETUP}
                 echo "    export LD_PRELOAD=${LOCALCONFRO}/'\$LIB'/${GSSAPILIBLOCAL}" >> ${TMPLOCALSETUP}
                 echo "fi" >> ${TMPLOCALSETUP}
             else
@@ -4712,7 +4494,7 @@ EOD
         fi
         LOCALCONFRO="`getROpath ${LOCALCONF}`"
         LOCALSETUPRO="`getROpath ${LOCALSETUP}`"
-        echo 'if [ -f $EMIVERSION ] ; then' >> ${TMPLOCALSETUP}
+        echo "if [ -f /etc/emi-version ] ; then" >> ${TMPLOCALSETUP}
         echo "    export LD_LIBRARY_PATH=${LOCALCONFRO}${MWDIR}/lib:${LOCALCONFRO}${MWDIR}/lib64:\$LD_LIBRARY_PATH" >> ${TMPLOCALSETUP}
         echo "else" >> ${TMPLOCALSETUP}
         echo "    export LD_LIBRARY_PATH=${LOCALCONFRO}/lib:${LOCALCONFRO}/lib64:\$LD_LIBRARY_PATH" >> ${TMPLOCALSETUP}
@@ -4733,7 +4515,6 @@ EOD
                 msgOut INFO "`cat ${LOCALSETUP}`"
             else
                 msgOut ERROR "Cannot move ${TMPLOCALSETUP} to ${LOCALSETUP}"
-                rm -f ${TMPLOCALSETUP}
                 setlcrc=6
             fi
         else
@@ -5056,7 +4837,7 @@ setupPacman() {
     if [ ! -d ${PACMAN_DIR} ] ; then
         msgOut WARNING "Pacman not found in `dirname ${PACMAN_DIR}`"
         if [ ! -s ${PACMAN_TAR} ] ; then
-            timeout 20s wget -T 20 ${PACMAN_URL}/`basename ${PACMAN_TAR}`
+            wget ${PACMAN_URL}/`basename ${PACMAN_TAR}`
             let setuprc=$setuprc+$?
             PACMAN_TAR="$PWD/`basename $PACMAN_TAR`"
             if [ ! -s "${PACMAN_TAR}" ] ; then
@@ -5097,87 +4878,6 @@ setupPacman() {
 }
 
 
-setupAyum() {
-    let setuprc=0
-    # Save the current directory
-    CURDIR=$PWD
-    # Use ${TOPDIR} to store ayum
-    cd ${TOPDIR}
-    # Download/find and install ayum, if needed
-    if [ ! -d ${AYUM_DIR} ] ; then
-        msgOut WARNING "ayum not found in `dirname ${AYUM_DIR}`"
-        git clone ${AYUM_GIT} ${AYUM_DIR}
-        let setuprc=$setuprc+$?
-        if [ $setuprc -ne 0 ] ; then
-            msgOut ERROR "Cannot get ayum from ${AYUM_GIT}"
-            return $setuprc
-        fi
-    else
-        cd ${AYUM_DIR}
-        git pull
-        cd "${TOPDIR}"
-    fi
-
-    # Setup ayum
-    cd "${AYUM_DIR}"
-    ./configure.ayum -i ${RELLOC} -D > yum.conf
-    let setuprc=$setuprc+$?
-    # Remove the unnecessary line from the generated file:
-    sed 's/AYUM package location.*//' yum.conf > yum.conf.fixed
-    mv -f yum.conf.fixed yum.conf
-
-    # Configure the ayum repositories:
-    cat - >./etc/yum.repos.d/lcg.repo <<EOF
-[lcg-repo]
-name=LCG Repository
-#baseurl=http://cern.ch/service-spi/external/rpms/lcg
-baseurl=http://lcgpackages.web.cern.ch/lcgpackages/rpms
-prefix=${RELLOC}/sw/lcg/releases
-enabled=1
-EOF
-
-    cat - >./etc/yum.repos.d/atlas-offline-data.repo <<EOF
-[atlas-offline-data]
-name=ATLAS offline data packages
-baseurl=http://cern.ch/atlas-software-dist-eos/RPMs/data
-enabled=1
-EOF
-
-    cat - >./etc/yum.repos.d/tdaq-nightly.repo <<EOF
-[tdaq-nightly]
-name=nightly snapshots of TDAQ releases
-baseurl=http://cern.ch/atlas-tdaq-sw/yum/tdaq/nightly
-enabled=1
-EOF
-
-    cat - >./etc/yum.repos.d/atlas-offline-releases.repo <<EOF
-[atlas-offline-releases-slc6]
-name=ATLAS offline releases SLC6
-baseurl=http://cern.ch/atlas-software-dist-eos/RPMs/releases/slc6
-enabled=1
-
-[atlas-offline-releases-cc7]
-name=ATLAS offline releases CC7
-baseurl=http://cern.ch/atlas-software-dist-eos/RPMs/releases/cc7
-enabled=0
-EOF
-
-    # Setup environment to run the ayum command:
-    shopt -s expand_aliases
-    source ./setup.sh
-
-    if [ $setuprc -eq 0 ] ; then
-        msgOut INFO "ayum installed and set up correctly in ${AYUM_DIR}."
-        msgOut INFO "using ayum from `which ayum`."
-    else
-        msgOut ERROR "Unable to setup ayum."
-    fi
-    # Go back to the startup directory
-    cd $CURDIR
-    return $setuprc
-}
-
-
 autoconfig() {
     # Autoconfiguration
     if [ -n "$AUTOCONF" ] ; then
@@ -5188,13 +4888,11 @@ autoconfig() {
         RELINFO="`echo ${AUTOCONF} | sed -e 's/\([^_]\)_\(.*\)\(_i686_slc[0-9]*_gcc[0-9]*\)_\(.*\)/\1 \2 \3/' -e 's/\([^_]\)_\(.*\)\(_x86_64_slc[0-9]*_gcc[0-9]*\)_\(.*\)/\1 \2 \3/'`"
         if [ "$RELINFO" == "${AUTOCONF}" ] ; then
             RELCONFDATA="`curl --connect-timeout 300 -sk  $ACURL?rel=${AUTOCONF}`"
-            MAINRELVER="`echo $AUTOCONF | cut -d: -f 2 | cut -d- -f 1 | awk -F "." '{for (i=1;i<=3;i++) ver=sprintf("%s%02d",ver,$i)}END{print int(ver)}'`"
         else
             RELPRJ="`echo $RELINFO | awk '{print $1}'`"
             RELVER="`echo $RELINFO | awk '{print $2}' | sed 's/_/./g'`"
             RELARC="`echo $RELINFO | awk '{print $3}'`"
             RELCONFDATA="`curl --connect-timeout 300 -sk  \"$ACURL?swname=${RELPRJ}&version=${RELVER}&arch=${RELARC}\"`"
-            MAINRELVER="`echo $RELVER | cut -d- -f 1 | awk -F "." '{for (i=1;i<=3;i++) ver=sprintf("%s%02d",ver,$i)}END{print int(ver)}'`"
         fi
         if [ $? -eq 0 ] ; then
             echo $RELCONFDATA | awk -F ',' '{for (i=1;i<=NF;i++) print $i}' | while read v; do
@@ -5222,21 +4920,17 @@ autoconfig() {
                         RELTAG)        echo "Tag name: $vval"
                                        echo TAGNAME=\"$vval\" >> $AUTOCONF_TMP;;
                         VALIDATE_TASK) TSKNAME="`echo $vval | cut -d '-' -f 2-`"
-                                       if [ $MAINRELVER -lt 210000 -o "$PRJTYPE" = "cmake" ] ; then
-                                           PRJTYPE="release"
-                                           case $TSKNAME in
-                                               prod|dev) PRJTYPE="release";;
-                                               prod-patch|dev-patch) PRJTYPE="patch";;
-                                               dq2tools|gcc) PRJTYPE="ext";;
-                                               nightlies) PRJTYPE="`echo $AUTOCONF | cut -d ':' -f 2- | cut -d '-' -f 2- | cut -d '_' -f 2`";;
-                                               poolcond) PRJTYPE="poolcond";;
-                                               t0-patch) PRJTYPE="t0patch";;
-                                               tdaq) PRJTYPE="tdaq";;
-                                               prod-analysis|dev-analysis) PRJTYPE="analysis";;
-                                           esac
-                                       else
-                                           PRJTYPE="cmake"
-                                       fi
+                                       PRJTYPE="release"
+                                       case $TSKNAME in
+                                           prod|dev) PRJTYPE="release";;
+                                           prod-patch|dev-patch) PRJTYPE="patch";;
+                                           dq2tools|gcc) PRJTYPE="ext";;
+                                           nightlies) PRJTYPE="`echo $AUTOCONF | cut -d ':' -f 2- | cut -d '-' -f 2- | cut -d '_' -f 2`";;
+                                           poolcond) PRJTYPE="poolcond";;
+                                           t0-patch) PRJTYPE="t0patch";;
+                                           tdaq) PRJTYPE="tdaq";;
+                                           prod-analysis|dev-analysis) PRJTYPE="analysis";;
+                                       esac
                                        echo "Project Type: $PRJTYPE"
                                        echo PRJTYPE=\"$PRJTYPE\" >> $AUTOCONF_TMP;;
                     esac
@@ -5315,12 +5009,8 @@ DQ2SETUPURL="http://classis01.roma1.infn.it/pacman/packages/DQ2Setup"
 PCMODE="all"
 MAXRELSETUPDEPTH=5
 
-OPTS=`getopt -o a:d:D:fgG:H:i:k:l:Lm:M:oO:p:P:Qr:R:s:St:T:x:w:hcCfnNquv:V -l add-tags,autoconf:,cache,check,cleanup,clean-links,compiler-home:,cvmfs-install,debug,dest:,dbarea:,dbrelease:,dbrelease-cache:,dbrelease-clean,ddm-setup:,ddm-site:,ddm-verify,dir:,disk-free:,dump-tags:,extra-tag:,extra-pkg:,force-tags,goc-name:,grid-name:,kv-conf:,kv-disable:,kv-enable:,kv-keep,kv-no-auto,kvpath:,kvpost-tag:,grid-cache,host:,ignore-install-errs,install:,install-compiler,kit-cache:,kv-cache:,kvpost,local-config:,logical:,logical-link:,manage:,min-install-size:,no-opt,no-tag,no-compat-patch,no-new-pacball,override-lock,package:,pacman-ver:,pretend-platform:,physical:,physical-link:,post-siteinfo,post-siteurl:,postinstall,project:,project-opt:,project-type:,quiet,restore-backup,reinstall,reinstall-clean,relative-links,release-only,release-name:,release-path:,pacball,pacball-dataset:,pacball-repo:,poolcond-copy,poolcond-mode:,poolcond-scandir,poolcond-topdir:,poolcond-pattern:,release-setup:,release-setup-level:,release-ver:,replicate,remove:,remove-snap:,remove-tags,rm-tags-on-fail,require-compiler,require-shfs,require-prj:,setenv:,set-frontier,setup-latest:,site-config:,site-type:,skip-local-config,snap:,snapdir:,snapname:,subcluster:,tag-file:,tag-mode:,tag-utility:,tags:,target:,temp-cache,test:,tthreads:,update,use-grid,vo:,validate,validation-exe:,xml:,create-dvd,write-dvd:,help,force,no-cache,no-version,query,stagein:,lfc-check,lfcHost:,inputGUIDs:,oldPrefix:,newPrefix: -- "$@"` 
-if [ $? != 0 ] ; then
-    echo "[ARGUMENTS] $@"
-    echo "Terminating..."
-    exit 1
-fi
+OPTS=`getopt -o a:d:D:fgG:H:i:k:l:Lm:M:oO:p:P:Qr:R:s:St:T:x:w:hcCfnNquv:V -l add-tags,autoconf:,cache,check,cleanup,clean-links,compiler-home:,cvmfs-install,debug,dest:,dbarea:,dbrelease:,dbrelease-cache:,dbrelease-clean,ddm-setup:,ddm-site:,ddm-verify,dir:,disk-free:,dump-tags:,extra-tag:,extra-pkg:,force-tags,goc-name:,grid-name:,kv-conf:,kv-disable:,kv-enable:,kv-keep,kv-no-auto,kvpost-tag:,grid-cache,host:,install:,install-compiler,kit-cache:,kv-cache:,kvpost,lfc-check,local-config:,logical:,logical-link:,manage:,min-install-size:,no-opt,no-tag,no-compat-patch,no-new-pacball,override-lock,package:,pacman-ver:,pretend-platform:,physical:,physical-link:,post-siteinfo,project:,project-opt:,project-type:,quiet,restore-backup,reinstall,reinstall-clean,relative-links,release-only,release-path:,pacball,pacball-dataset:,pacball-repo:,poolcond-copy,poolcond-mode:,poolcond-scandir,poolcond-topdir:,poolcond-pattern:,release-setup:,release-setup-level:,release-ver:,replicate,remove:,remove-snap:,remove-tags,rm-tags-on-fail,require-compiler,require-shfs,require-prj:,setenv:,set-frontier,setup-latest:,site-config:,skip-local-config,snap:,snapdir:,snapname:,subcluster:,tag-file:,tag-mode:,tag-utility:,tags:,target:,temp-cache,test:,tthreads:,update,use-grid,vo:,validate,validation-exe:,xml:,create-dvd,write-dvd:,help,force,no-cache,no-version,query -- "$@"` 
+if [ $? != 0 ] ; then echo "Terminating..."; exit -1 ; fi
 eval set -- "$OPTS"
 
 while true ; do
@@ -5356,7 +5046,6 @@ while true ; do
         --kv-enable)           KVE="$2";shift 2;;
         --kv-keep)             KVKEEP="y";shift;;
         --kv-no-auto)          KVNOAUTO="y";shift;;
-        --kvpath)              KVPATH="$2";shift 2;;
         --kvpost)              T_POST="yes";shift;;
         --kvpost-tag)          KVPOSTTAG="$2";shift 2;;
         --validate|-V)         ACTION="validate";shift;;
@@ -5366,15 +5055,12 @@ while true ; do
         --help|-h)             help;exit;;
         --host|-H)             TAGHOST="$2";shift 2;;
         --vo)                  TAGVO="$2";shift 2;;
-        --ignore-install-errs) IGNORE_INSTALL_ERRORS="y";shift;;
         --install|-i)          ACTION="install";RELEASE="$2";shift 2;;
-        --inputGUIDs)          INPUTGUIDS="$2";shift 2;;
         --manage|-M)           ACTION="manage";RELEASE="$2";shift 2;;
         --kit-cache|-k)        ATLAS="$2";shift 2;;
         --min-install-size)    MININSTALLSIZE="$2";shift 2;;
         --dest)                SWPATH="$2";shift 2;;
         --lfc-check|-L)        LFCCHECK="y";shift;;
-        --lfcHost)             LFCHOST="$2";shift 2;;
         --local-config)        LOCALCONF="$2";shift 2;;
         --logical|-l)          SWLOC="`echo $2 | sed 's;//*;/;g'`";shift 2;;
         --logical-link)        LOGLINK="`echo $2 | sed 's;//*;/;g'`";shift 2;;
@@ -5394,8 +5080,6 @@ while true ; do
         --poolcond-scandir)    PCSCANDIR="yes";shift;;
         --poolcond-topdir)     PCTOPDIR="$2";shift 2;;
         --post-siteinfo)       POSTSITEINFO="yes";shift;;
-        --post-siteurl)        POSTSITEURL="$2";shift 2;;
-        --postinstall)         POSTINSTALL="y";shift;;
         --project|-P)          PRJNAME="$2";shift 2;;
         --project-opt|-O)      PRJOPT="$2";shift 2;;
         --project-type|-T)     PRJTYPE="`echo $2 | tr [A-Z] [a-z]`";shift 2;;
@@ -5410,7 +5094,6 @@ while true ; do
         --reinstall)           REINSTALL="yes";shift;;
         --reinstall-clean)     REINSTALLCLEAN="yes";shift;;
         --relative-links)      RELLINKS="yes";shift;;
-        --release-name)        BASERELVER="$2";shift 2;;
         --release-only|-o)     PACKOPT="rel";shift;;
         --release-path)        MAINRELPATH="$2";shift 2;;
         --release-setup)       RELSETPATH="$2";shift 2;;
@@ -5426,12 +5109,10 @@ while true ; do
         --set-frontier)        SETFRONTIER="y";shift;;
         --setup-latest)        PRESETUP="$2";shift 2;;
         --site-config)         SITECONF="$2";shift 2;;
-        --site-type)           SITETYPE="$2";shift 2;;
         --skip-local-config)   SKIPLOCALCONF="yes";shift;;
         --snap|-s)             ACTION="snap";RELEASE="$2";shift 2;;
         --snapname)            SNAPNAME="$2";shift 2;;
         --snapdir)             SNAPDIR="$2";shift 2;;
-        --stagein)             STAGEIN="$2";shift 2;;
         --subcluster)          TAGSCNAME="$2";shift 2;;
         --tag-file)            TAGFILE="$2";shift 2;;
         --tag-mode)            TAGMODE="$2";shift 2;;
@@ -5464,17 +5145,10 @@ PACMAN_OPTS="$PACMAN_OPTS -trust-all-caches -allow tar-overwrite -allow unsuppor
 [ "$TAGNAME" == "" ]  && TAGNAME="VO-atlas-${PRJTAGNAME}-${RELEASE}"
 [ "$DDMSITE" == "auto" ] && unset DDMSITE
 
-# Stage in files
-if [ -n "$STAGEIN" ] ; then
-    for STAGEURL in `echo $STAGEIN | sed 's/,/ /g'`; do
-        timeout 20s wget -T 20 --no-check-certificate $STAGEURL
-    done
-fi
-
 # PoolCond pattern
 PCSCHEMA="`echo $PCPATTERN | sed 's#\(http.*\)://\(.*\)#\1#'`"
 if [ "$PCSCHEMA" == "http" -o "$PCSCHEMA" == "https" ] ; then
-    timeout 20s wget -T 20 -N -c $PCPATTERN
+    wget -N -c $PCPATTERN
     PCSCHEMAFILE="`basename $PCPATTERN`"
     PCPATTERN="`cat $PCSCHEMAFILE 2> /dev/null`"
 else
@@ -5577,10 +5251,7 @@ if [ "$ATLAS" == "" ] ; then
       ATLAS="http://atlas-computing.web.cern.ch/atlas-computing/links/kitsDirectory/PAT/EventView"
       [ "$REQPRJNAME" == "" ] && REQPRJNAME="AtlasOffline"
     elif [ "$PRJTYPE" == "tdaq" ] ; then
-        case $ARCH in
-            *_slc6_*) ATLAS="http://atlas-tdaq-sw.web.cern.ch/atlas-tdaq-sw/yum/tdaq/slc6/";;
-            *) ATLAS="http://atlas-tdaq-sw.web.cern.ch/atlas-tdaq-sw/download/apt/tdaq-new/tdaq/";;
-        esac
+      ATLAS="http://atlas-tdaq-sw.web.cern.ch/atlas-tdaq-sw/download/apt/tdaq-new/tdaq/"
     elif [ "$PRJTYPE" == "ext" ] ; then
       ATLAS="http://classis01.roma1.infn.it/pacman/cache"
     elif [ "$PRJTYPE" == "dbrelease" ] ; then
@@ -5590,11 +5261,9 @@ if [ "$ATLAS" == "" ] ; then
     fi
   fi
 fi
-PACMAN_URL="http://physics.bu.edu/~youssef/Pacman/sample_cache/tarballs"
+PACMAN_URL="http://atlas.bu.edu/~youssef/pacman/sample_cache/tarballs"
 PACMAN_DIR=${INSTALLER_HOME}/pacman-${PACMAN_VER}
 PACMAN_TAR=${PACMAN_DIR}.tar.gz
-AYUM_DIR=${INSTALLER_HOME}/ayum
-AYUM_GIT="https://gitlab.cern.ch/rhauser/ayum.git"
 [ "$SNAPDIR" == "" ] && SNAPDIR=${TOPDIR}/snapshots
 # Define the snapshot name
 if [ "$SNAPNAME" == "" ] ; then
@@ -5630,11 +5299,11 @@ elif [ "`echo $ARCH | grep ^_`" != "" -a "$PRJNAME" != "release" -a "$PRJNAME" !
   ARC="`uname -m`"
   GCC=gcc${ARCH}
   if [ "$PRJTYPE" == "tdaq" ] ; then
-    REL="`echo ${RELEASE} | cut -d@ -f 1 | awk -F. 'BEGIN{str=""}{for(i=1;i<=NF;i++) {if (length(str)>0) str=sprintf("%s-%02d",str,$i); else str=sprintf("%02d",$i)}}END{print str}'`"
+    REL="`echo ${RELEASE} | awk -F. 'BEGIN{str=""}{for(i=1;i<=NF;i++) {if (length(str)>0) str=sprintf("%s-%02d",str,$i); else str=sprintf("%02d",$i)}}END{print str}'`"
     ATLASRELEASE="${PRJNAME}-${REL}"
   else
     REL="`echo ${RELEASE} | sed "s#\.#_#g"`"
-    [ "$PRJTYPE" != "ext" ] && ARCH1="`echo ${ARCH} | sed 's/4\([3-9]\)[0-9]$/4\1/g'`" || ARCH1="$ARCH"
+    [ "$PRJTYPE" != "ext" ] && ARCH1="`echo ${ARCH} | sed 's/435$/43/'`" || ARCH1="$ARCH"
     ATLASRELEASE="${PRJNAME}_${REL}${ARCH1}"
     [ "$PRJOPT" != "" -a "$NOOPT" != "yes" ] && ATLASRELEASE="${ATLASRELEASE}_${PRJOPT}"
   fi
@@ -5659,59 +5328,39 @@ if [ "$DEBUG" == "yes" ] ; then
     msgOut DEBUG "PYTHONPATH=${PYTHONPATH}"
 fi
 
-# Setup pacman or ayum
+# Setup pacman
 cd "${TOPDIR}"
 if [ "$ACTION" == "validate" -o "$ACTION" == "install" -o "$ACTION" == "test" -o "$ACTION" == "remove" -o "$ACTION" == "snap" ] ; then
     if [ "$ACTION" == "validate" -o "$ACTION" == "install" ] ; then
         [ "$USEPACBALL" == "yes" ] && SKIPSETUP="yes"
     fi
-    [ "$PRJTYPE" == "poolcond" -o "$PRJTYPE" == "cvmfsnightly" ] && SKIPSETUP="yes"
-    # Skip the pacman or ayum setup if we're installing and using pacballs or handing CVMFS nightlies
-    if [ "$PRJTYPE" != "cmake" ] ; then
-        if [ "$SKIPSETUP" == "" -a "`which pacman 2>/dev/null`" == "" ] ; then    
-            setupPacman
-            let rc=$rc+$?
-            if [ $rc -ne 0 ] ; then
-                msgOut ERROR "Cannot setup pacman"
-                [ "$XMLFILE" != "" ] && xml close
-                exit $rc
-            fi
-        else
-            msgOut INFO "I will not download pacman since we are using pacballs or pacman has been disabled."
-        fi
-    else
-        setupAyum
+    [ "$PRJTYPE" == "poolcond" ] && SKIPSETUP="yes"
+    # Skip the pacman setup if we're installing and using pacballs
+    if [ "$SKIPSETUP" == "" -a "`which pacman 2>/dev/null`" == "" ] ; then    
+        setupPacman
+        let rc=$rc+$?
         if [ $rc -ne 0 ] ; then
-            msgOut ERROR "Cannot setup ayum"
+            msgOut ERROR "Cannot setup pacman"
             [ "$XMLFILE" != "" ] && xml close
             exit $rc
         fi
-    fi
-    if [ "$DEBUG" == "yes" ] ; then
-        msgOut DEBUG "PATH=${PATH}"
-        msgOut DEBUG "LD_LIBRARY_PATH=${LD_LIBRARY_PATH}"
-        msgOut DEBUG "PYTHONPATH=${PYTHONPATH}"
+        if [ "$DEBUG" == "yes" ] ; then
+            msgOut DEBUG "PATH=${PATH}"
+            msgOut DEBUG "LD_LIBRARY_PATH=${LD_LIBRARY_PATH}"
+            msgOut DEBUG "PYTHONPATH=${PYTHONPATH}"
+        fi
+    else
+        msgOut INFO "I will not download pacman since we are using pacballs or pacman has been disabled."
     fi
 fi
 
 # Define the installation directories
 [ "$DEBUG" == "yes" ] && msgOut DEBUG "SWLOC [1] =$SWLOC"
-if [ -z "$SWLOC" ] ; then
-    if [ -n "$RELLOC" ] ; then
-        SWLOC="$RELLOC"
-    else
-        SWLOC="${TOPDIR}/software"
-        [ "$PRJTYPE" != "cmake" ] && SWLOC="${SWLOC}/${RELEASE}"
-    fi
+if [ "$SWLOC" == ""  ] ; then
+    [ "$RELLOC" != "" ] && SWLOC="$RELLOC" \
+                        || SWLOC="${TOPDIR}/software/${RELEASE}"
 fi
 [ "$RELLOC" == "" ] && RELLOC=${TOPDIR}/releases
-
-# Handle multiple logical locations
-FULLSWLOC="$SWLOC"
-for TMPLOC in `echo $FULLSWLOC | sed 's/,/ /g'`; do
-    SWLOC="$TMPLOC"
-    [ -d "$TMPLOC" ] && break
-done
 
 # Reset the logical install path if a logical link is found and if running on CVMFS
 [ -n "$LOGLINK" -a -d "$LOGLINK" -a "`getFSType $LOGLINK`" == "cvmfs" ] && SWLOC=$LOGLINK
@@ -5738,8 +5387,7 @@ fi
 # Save the environment
 export ENVSTART="/tmp/sw-mgr-envstart.tmp.$$"
 msgOut INFO "Saving the installation environment in $ENVSTART"
-#/usr/bin/env | grep '=' | cut -d'=' -f 1 | egrep -v '^_$|^\s|^	|^$' | while read var; do echo "$var='`/usr/bin/printenv $var`'"; done > $ENVSTART
-export -p | sed 's/^[^=]* \([^ ]*=\)/\1/;/^_=/d' > $ENVSTART
+/usr/bin/env | grep '=' | cut -d'=' -f 1 | egrep -v '^_$|^\s|^	|^$' | while read var; do echo "$var='`/usr/bin/printenv $var`'"; done > $ENVSTART
 [ "$LD_LIBRARY_PATH" == "" ] && echo "unset LD_LIBRARY_PATH" >> $ENVSTART
 [ "$PYTHONPATH" == "" ] && echo "unset PYTHONPATH" >> $ENVSTART
 
@@ -5884,11 +5532,8 @@ if [ "$ACTION" == "install" -o "$ACTION" == "validate" ] ; then
                 if [ "$SWAREAFS" == "cvmfs" -a "$PRJTYPE" == "poolcond" ] ; then
                     msgOut INFO "Skipping validation of $PRJTYPE because we are in CVMFS"
                 else
-                    msgOut INFO "Starting validation [$rc]"
                     validate
-                    vrc=$?
-                    let rc=$rc+$vrc
-                    msgOut INFO "Validation exit code [$vrc] , overall exit code [$rc]"
+                    let rc=$rc+$?
                 fi
             else
                 msgOut INFO "Skipping validation due to previous errors"
@@ -5917,7 +5562,7 @@ elif [ "$ACTION" == "test" ] ; then
         else
             if [ "$TAGHOST" != "" ] ; then
                 SWAREAINFO="`getSWarea`"
-                #SHARED_INSTALL="`timeout 20s wget -T 20 -qO --no-check-certificate - --post-data="swarea=${SWAREAINFO}&rel=${RELEASE}&status=installed" ${POSTRELURL}`"
+                #SHARED_INSTALL="`wget -qO --no-check-certificate - --post-data="swarea=${SWAREAINFO}&rel=${RELEASE}&status=installed" ${POSTRELURL}`"
                 SHARED_INSTALL="`curl --connect-timeout 300 --insecure -s -S --data "swarea=${SWAREAINFO}&rel=${RELEASE}&status=installed" ${POSTRELURL}`"
                 if [ $? -eq 0 ] ; then
                     SHARED_INSTALL="`echo $SHARED_INSTALL | awk '{print $1}' | sed "s#${RELEASE}#yes#g"`"

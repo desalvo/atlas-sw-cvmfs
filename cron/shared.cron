@@ -4,4 +4,7 @@
 0 2,6,10,14,18,22 * * * /home/cvatlas/bin/updateAtlasReleases > /home/cvatlas/logs/updateAtlasReleases.lastlog 2>&1
 30 */4 * * * /home/cvatlas/bin/updatePilot > /home/cvatlas/logs/updatePilot.lastlog 2>&1
 15 */2 * * * /home/cvatlas/bin/updateBoinc > /home/cvatlas/logs/updateBoinc.lastlog 2>&1
+*/5 * * * * /home/cvatlas/bin/updateTzeroPatches > /home/cvatlas/logs/updateTzeroPatches.lastlog 2>&1
+45 */6 * * * /home/cvatlas/bin/updateSimulationData > /home/cvatlas/logs/updateSimulationData.lastlog 2>&1
+30 0 * * * /home/cvatlas/bin/cleanupGroupData > /home/cvatlas/logs/cleanupGroupData.lastlog 2>&1
 0 2 * * * /usr/sbin/tmpwatch 300 /home/cvatlas/logs

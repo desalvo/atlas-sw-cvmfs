@@ -1,0 +1,159 @@
+#!/bin/sh
+
+VERSION="`basename $0` v1.0 - 20180221"
+help() {
+    cat <<EOD
+Usage: `basename $0` [OPTION]
+   OPTIONS
+   -------
+   --link|-l <image-link>             Image link
+   --name|-n <image-name>             Image name
+   --help|-h                          Display this help
+   --docker-image|-D <name>           Docker image name
+                                      default: atlasadc/atlas-grid-<image-name>
+   --trial|-t                         Trial run
+
+$VERSION
+Alessandro De Salvo <Alessandro.DeSalvo@roma1.infn.it>
+EOD
+}
+
+
+OPTS=`getopt -o D:hl:n:t -l docker-image:,help,link:,name:,trial -- "$@"`
+if [ $? != 0 ] ; then echo "Terminating..."; exit -1 ; fi
+eval set -- "$OPTS"
+
+while true ; do
+    case "$1" in
+        --docker-image|-D)     DOCKER_IMAGE="$2";shift 2;;
+        --link|-l)             IMAGE_LINK="$2";shift 2;;
+        --name|-n)             IMAGE_NAME="$2";shift 2;;
+        --trial|-t)            TRIAL="y";shift;;
+        --help|-h)             help;exit;;
+        --)                    shift;break;;
+        \?)                    break;
+        exit;;
+    esac
+done
+
+if [ -z "$IMAGE_NAME" ] ; then
+  echo "No image name supplied, please specify --name <image-name>"
+  exit 1
+fi
+
+[ -z "$DOCKER_IMAGE" ] && DOCKER_IMAGE="atlasadc/atlas-grid-${IMAGE_NAME}"
+[ -z "$IMAGE_LINK" ] && IMAGE_LINK="x86_64-${IMAGE_NAME}"
+TS="`date --utc +%Y%m%d%H%M%S`"
+OUTIMG="${IMAGE_NAME}-${TS}"
+TMPDIR=/tmp
+BASEIMGDIR="$HOME/singularity/base"
+OUTDIR="/cvmfs/atlas.cern.ch/repo/containers/images/singularity"
+EXPORTDIR="/cvmfs/atlas.cern.ch/repo/containers/export/singularity"
+FSDIR="/cvmfs/atlas.cern.ch/repo/containers/fs/singularity"
+TOPDIR=$PWD
+export SINGULARITY_CACHEDIR=/tmp/singularity.$$
+
+if [ -n "$TRIAL" ] ; then
+  echo "Docker image: $DOCKER_IMAGE"
+  echo "Timestamp: $TS"
+  echo "Image name: $IMAGE_NAME"
+  echo "Image link: $IMAGE_LINK"
+  exit
+fi
+
+rc=0
+echo "Building image from docker://${DOCKER_IMAGE}"
+echo "sudo singularity build --writable ${TMPDIR}/${OUTIMG}.img.0 docker://${DOCKER_IMAGE}"
+sudo SINGULARITY_CACHEDIR=$SINGULARITY_CACHEDIR singularity build --writable ${TMPDIR}/${OUTIMG}.img.0 docker://${DOCKER_IMAGE}
+cmdrc=$?
+[ -f ${TMPDIR}/${OUTIMG}.img.0 ] && sudo chown cvatlas.cvatlas ${TMPDIR}/${OUTIMG}.img.0
+if [ $cmdrc -eq 0 ] ; then
+  echo "Stripping image"
+  sudo SINGULARITY_CACHEDIR=$SINGULARITY_CACHEDIR singularity exec --writable -C ${TMPDIR}/${OUTIMG}.img.0 rm -fr /var/lib/yum /var/cache/yum /usr/share/doc /boot
+  echo "Adding timestamp"
+  sudo SINGULARITY_CACHEDIR=$SINGULARITY_CACHEDIR singularity exec --writable -C ${TMPDIR}/${OUTIMG}.img.0 /bin/sh -c "echo $TS > /singularity-creation-date" 
+  sudo SINGULARITY_CACHEDIR=$SINGULARITY_CACHEDIR singularity exec --writable -C ${TMPDIR}/${OUTIMG}.img.0 /bin/sh -c 'echo "export CDATE_SINGULARITY=\"`cat /singularity-creation-date`\"" >> /etc/profile.d/container-date.sh'
+  sudo SINGULARITY_CACHEDIR=$SINGULARITY_CACHEDIR singularity exec --writable -C ${TMPDIR}/${OUTIMG}.img.0 /bin/sh -c 'echo "setenv CDATE_SINGULARITY \"`cat /singularity-creation-date`\"" >> /etc/profile.d/container-date.csh'
+  if [ $? -eq 0 ] ; then
+    echo "Converting image ${TMPDIR}/${OUTIMG}.img.0 to ${TMPDIR}/${OUTIMG}.img"
+    sudo SINGULARITY_CACHEDIR=$SINGULARITY_CACHEDIR singularity build ${TMPDIR}/${OUTIMG}.img ${TMPDIR}/${OUTIMG}.img.0
+    cmdrc=$?
+    [ -f ${TMPDIR}/${OUTIMG}.img ] && sudo chown cvatlas.cvatlas ${TMPDIR}/${OUTIMG}.img
+    if [ $cmdrc -eq 0 ] ; then
+      echo "Calculating checksum on ${TMPDIR}/${OUTIMG}.img"
+      SHASUM="`sha256sum ${TMPDIR}/${OUTIMG}.img | awk '{print $1}'`"
+      echo "Image ${TMPDIR}/${OUTIMG}-${SHASUM}.img ready"
+      mv ${TMPDIR}/${OUTIMG}.img ${TMPDIR}/${OUTIMG}-${SHASUM}.img
+      echo "Converting image to FS"
+      sudo SINGULARITY_CACHEDIR=$SINGULARITY_CACHEDIR singularity build --sandbox ${TMPDIR}/${OUTIMG}-${SHASUM}/ ${TMPDIR}/${OUTIMG}-${SHASUM}.img
+      cmdrc=$?
+      [ -d ${TMPDIR}/${OUTIMG}-${SHASUM} ] && sudo chown -R cvatlas.cvatlas ${TMPDIR}/${OUTIMG}-${SHASUM}
+      if [ $cmdrc -eq 0 ] ; then
+        echo "Fixing permissions"
+        find ${TMPDIR}/${OUTIMG}-${SHASUM} -type d -exec chmod u+w {} \;
+        find ${TMPDIR}/${OUTIMG}-${SHASUM}/usr/bin -type f -exec chmod u+rw {} \;
+        find ${TMPDIR}/${OUTIMG}-${SHASUM}/usr/libexec -type f -exec chmod u+rw {} \;
+        chmod u+rw ${TMPDIR}/${OUTIMG}-${SHASUM}/etc/*shadow*
+        rm -fr ${TMPDIR}/${OUTIMG}-${SHASUM}/var/lib/yum
+        find ${TMPDIR}/${OUTIMG}-${SHASUM}/ ! -perm -o+r -exec rm -fr {} \; 2>/dev/null
+        # Fixing hardlinks
+        echo "Fixing hardlinks"
+        cd  ${TMPDIR}/${OUTIMG}-${SHASUM}
+        declare -a inodes
+        find "$PWD" -type f -links +1 -printf "%i %p\n" | sort -rn | \
+        while read inode file; do
+          if [ -z "${inodes[$inode]}" ] ; then
+            inodes[$inode]="$file"
+          else
+            rm -f $file
+            cp -f "${inodes[$inode]}" "$file"
+          fi
+        done
+        cd $TOPDIR
+        find ${TMPDIR}/${OUTIMG}-${SHASUM} -name '.wh.*' -exec rm -fr {} \;
+      else
+        rc=3
+      fi
+    else
+      rc=2
+    fi
+  else
+    rc=1
+  fi
+
+
+  if [ $rc -eq 0 -a -z "$TRIAL" ] ; then
+    lock-install singularity-${IMAGE_NAME}
+    cvmfs_server transaction atlas.cern.ch
+    [ ! -d $OUTDIR ] && mkdir -p $OUTDIR
+    echo "Moving image ${TMPDIR}/${OUTIMG}-${SHASUM}.img to ${OUTDIR}/${OUTIMG}-${SHASUM}.img"
+    mv ${TMPDIR}/${OUTIMG}-${SHASUM}.img ${OUTDIR}/${OUTIMG}-${SHASUM}.img
+    chmod 755 ${OUTDIR}/${OUTIMG}-${SHASUM}.img
+    echo "Moving fs from ${TMPDIR}/${OUTIMG}-${SHASUM} to ${FSDIR}/${OUTIMG}-${SHASUM}"
+    [ ! -d ${FSDIR} ] && mkdir -p ${FSDIR}
+    mv ${TMPDIR}/${OUTIMG}-${SHASUM} ${FSDIR}
+    touch ${FSDIR}/${OUTIMG}-${SHASUM}/.cvmfscatalog
+    echo "Linking ${FSDIR}/x86_64-${IMAGE_NAME} to ${OUTIMG}-${SHASUM}"
+    rm -f ${FSDIR}/x86_64-${IMAGE_NAME}
+    ln -sf ${OUTIMG}-${SHASUM} ${FSDIR}/${IMAGE_LINK}
+    echo "Linking ${OUTDIR}/x86_64-${IMAGE_NAME}.img to ${OUTIMG}-${SHASUM}.img"
+    rm -f ${OUTDIR}/x86_64-${IMAGE_NAME}.img
+    ln -sf ${OUTIMG}-${SHASUM}.img ${OUTDIR}/${IMAGE_LINK}.img
+    echo "Updating ChangeLog"
+    cvmfs-changelog --add "${OUTIMG}-${SHASUM}"
+    cvmfs_server publish atlas.cern.ch
+    unlock-install
+  fi
+fi
+
+# Cleanup temporary files
+echo "Cleaning up temporary files"
+if [ -z "$TRIAL" ] ; then
+  rm -f ${TMPDIR}/${OUTIMG}.img.0 ${TMPDIR}/${OUTIMG}.img ${TMPDIR}/${OUTIMG}-${SHASUM}.img
+  if [ -d $SINGULARITY_CACHEDIR ] ; then
+    sudo chown -R cvatlas.cvatlas $SINGULARITY_CACHEDIR
+    rm -fr $SINGULARITY_CACHEDIR
+  fi
+fi
+echo "done"
+exit

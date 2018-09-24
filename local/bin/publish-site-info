@@ -1,0 +1,62 @@
+#!/bin/bash
+
+# Prescale to 1/10 of the calls
+ALLOWED="`echo 1 | awk '{srand(); r=int(rand()*10); if (r > 8) { print $1}}'`"
+[ -z "$ALLOWED" ] && exit 0
+
+# Publish the site info
+PANDARES="$1"
+[ -z "$PANDARES" ] && exit 1
+
+[ -z "$VO_ATLAS_SW_DIR" ] && VO_ATLAS_SW_DIR=/cvmfs/atlas.cern.ch/repo/sw
+
+# Check the include list
+INCLUDELIST=$VO_ATLAS_SW_DIR/local/etc/sitedesc.include
+if [ -s "$INCLUDELIST" ] ; then
+    grep "^${PANDARES}$" $INCLUDELIST &> /dev/null
+    [ $? -ne 0 ] && exit 2
+fi
+
+export AGISINFO=$VO_ATLAS_SW_DIR/local/bin/agis-site-info
+TIMEOUT="timeout 30s"
+LSENDPOINT="http://atlas-svc-07.roma1.infn.it:8080/sitedesc"
+SDENDPOINT="http://atlas-svc-07.roma1.infn.it:8080/slotdesc"
+NDENDPOINT="http://atlas-svc-07.roma1.infn.it:8080/nodedesc"
+REPORT="http://atlas-svc-07.roma1.infn.it:8080/report"
+JMTYPE="$BATCH_SYSTEM"
+[ -z "$JMTYPE" ] && JMTYPE="`$TIMEOUT $AGISINFO -j $PANDARES`"
+export CORECOUNT="`$TIMEOUT $AGISINFO -c $PANDARES`"
+
+rc=$?
+if [ $rc -eq 0 ] ; then
+    $TIMEOUT $AGISINFO -I $PANDARES 2> /dev/null | while read RESINFO; do
+        QNAME="`echo $RESINFO | awk -F, '{print $NF}'`"
+        unset HINFO SINFO QINFO HDESC ALLINFO UNSUPPORTED
+        case $JMTYPE in
+            lsf|lcglsf)           HINFO="`$TIMEOUT $VO_ATLAS_SW_DIR/local/bin/lsf/get-host-slots`";
+                                  SINFO="`$TIMEOUT $VO_ATLAS_SW_DIR/local/bin/lsf/get-queue-slots $QNAME`";
+                                  QINFO="`$TIMEOUT $VO_ATLAS_SW_DIR/local/bin/lsf/get-queue-info $QNAME`";
+                                  [ -z "$QINFO" ] && $TIMEOUT curl --connect-timeout 10 -X PUT "${REPORT}/queue" -d "$RESINFO [`$TIMEOUT $VO_ATLAS_SW_DIR/local/bin/lsf/get-debug-info`]"
+                                  ;;
+            pbs|lcgpbs|cream-pbs) HINFO="`$TIMEOUT $VO_ATLAS_SW_DIR/local/bin/pbs/get-host-slots`";
+                                  SINFO="`$TIMEOUT $VO_ATLAS_SW_DIR/local/bin/pbs/get-queue-slots $QNAME`";
+                                  QINFO="`$TIMEOUT $VO_ATLAS_SW_DIR/local/bin/pbs/get-queue-info $QNAME $CORECOUNT`";
+                                  [ -z "$QINFO" ] && $TIMEOUT curl --connect-timeout 10 -X PUT "${REPORT}/queue" -d "$RESINFO [`qstat -Q 2>&1`]"
+                                  ;;
+            condor|HTCondorCE|HTCondor) HINFO="`$TIMEOUT $VO_ATLAS_SW_DIR/local/bin/condor/get-host-slots`";
+                                  SINFO="`$TIMEOUT $VO_ATLAS_SW_DIR/local/bin/condor/get-queue-slots $QNAME`";
+                                  QINFO="`$TIMEOUT $VO_ATLAS_SW_DIR/local/bin/condor/get-queue-info $QNAME`";
+                                  [ -z "$QINFO" ] && $TIMEOUT curl --connect-timeout 10 -X PUT "${REPORT}/queue" -d "$RESINFO [`$TIMEOUT $VO_ATLAS_SW_DIR/local/bin/condor/get-debug-info`]"
+                                  ;;
+            *)                    UNSUPPORTED=1
+                                  ;;
+        esac
+        HDESC="`$TIMEOUT $VO_ATLAS_SW_DIR/local/bin/common/get-host-info`";
+        ALLINFO="${RESINFO},${HINFO},${SINFO},${QINFO},${HDESC}"
+        [ -n "$ALLINFO" -a -n "$SINFO" -a -n "$QINFO" -a -z "$UNSUPPORTED" ] && $TIMEOUT curl --connect-timeout 10 -X PUT "${LSENDPOINT}" -d "${ALLINFO}" &> /dev/null
+        [ -n "$RESINFO" -a -n "$HINFO" -a -n "$SINFO" -a -n "$QINFO" -a -z "$UNSUPPORTED" ] && $TIMEOUT curl --connect-timeout 10 -X PUT "${SDENDPOINT}" -d "${RESINFO},${HINFO},${SINFO},${QINFO}" &> /dev/null
+        [ -n "$RESINFO" -a -n "$HDESC" ] && $TIMEOUT curl --connect-timeout 10 -X PUT "${NDENDPOINT}" -d "${RESINFO},${HDESC}" &> /dev/null
+        [ -n "$UNSUPPORTED" ] && $TIMEOUT curl --connect-timeout 10 -X PUT "${REPORT}/jm" -d "${JMTYPE}" &> /dev/null
+    done
+fi
+exit $rc

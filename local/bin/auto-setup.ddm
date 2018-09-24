@@ -1,0 +1,143 @@
+#!/bin/bash
+
+######################################################################
+#                  ATLAS Auto-Setup configuration file               #
+#                  Usage: source auto-setup [SITENAME]               #
+#  Alessandro De Salvo <Alessandro.DeSalvo@roma1.infn.it> - 20120828 #
+######################################################################
+
+VERSION="auto-setup v1.1.0 - 20120828"
+show_help() {
+    cat <<EOD
+Usage: auto-setup [OPTION]
+   OPTIONS
+   -------
+   --verbose|-v                    Enable debug mode
+   --help|-h                       Show this help
+   --version|-V                    Show the version
+$VERSION
+Alessandro De Salvo <Alessandro.DeSalvo@roma1.infn.it>
+EOD
+}
+
+path_prepend() {
+    eval export ${1}="$2:`eval echo \\$\${1} | sed -e "s#$2##g" -e "s#^:*##g"`"
+}
+
+setup_dcache() {
+    export DCACHE_RAHEAD=TRUE
+    export DCACHE_RA_BUFFER=32768
+    export DC_LOCAL_CACHE_BUFFER=1
+    export DC_LOCAL_CACHE_BLOCK_SIZE=131072
+    export DC_LOCAL_CACHE_MEMORY_PER_FILE=10000000
+    if [ -f "/etc/emi-release" ] ; then
+        path_prepend LD_LIBRARY_PATH $VO_ATLAS_SW_DIR/local/emi/dcache/lib:$VO_ATLAS_SW_DIR/local/emi/dcache/lib64
+    else
+        path_prepend LD_LIBRARY_PATH $VO_ATLAS_SW_DIR/local/glite/dcache/lib:$VO_ATLAS_SW_DIR/local/glite/dcache/lib64
+    fi
+}
+
+setup_dpm() {
+    #export LD_PRELOAD=$VO_ATLAS_SW_DIR/local/dpm/'$LIB'/libglobus_gssapi_gsi_gcc32dbgpthr.so
+    if [ -f "/etc/emi-release" ] ; then
+        path_prepend LD_LIBRARY_PATH $VO_ATLAS_SW_DIR/local/emi/dpm/lib:$VO_ATLAS_SW_DIR/local/emi/dpm/lib64
+    else
+        path_prepend LD_LIBRARY_PATH $VO_ATLAS_SW_DIR/local/glite/dpm/lib:$VO_ATLAS_SW_DIR/local/glite/dpm/lib64
+    fi
+}
+
+# Initialize the return code
+rc=0
+
+# Check if we're running executed or sourced
+if [ "$BASH_SOURCE" == "$0" ] ; then
+    echo "You should source auto-setup, not execute it"
+    exit 1
+fi
+
+# Get the full path to the software root directory
+SOURCE="${BASH_SOURCE[0]}"
+while [ -h "$SOURCE" ] ; do
+    SOURCE="$(readlink "$SOURCE")"
+done
+DIR="$( cd -P "$( dirname "$SOURCE" )" && pwd )"
+export VO_ATLAS_SW_DIR="`readlink -f $DIR/../..`"
+
+
+# CLI options
+OPTS=`getopt -o hvV -l help,verbose,version -- "$@"`
+if [ $? != 0 ] ; then echo "Terminating..."; return -1 ; fi
+eval set -- "$OPTS"
+
+while true ; do
+    case "$1" in
+        --help|-h)     show_help;shift;return 0;;
+        --verbose|-v)  VERBOSE="yes";shift;;
+        --version|-V)  echo $VERSION;shift;return 0;;
+        --)            shift;break;;
+        \?)            break;
+        exit;;
+    esac
+done
+
+# Set the custom site name, if provided
+[ -n "$1" ] && CUSTOM_SITE_NAME="$1"
+
+# Choose which site name to use
+if [ -n "$CUSTOM_SITE_NAME" ] ; then
+    LOCAL_SITE_NAME="$CUSTOM_SITE_NAME"
+    unset CUSTOM_SITE_NAME
+elif [ -n "$ATLAS_SITE_NAME" ] ; then
+    LOCAL_SITE_NAME="$ATLAS_SITE_NAME"
+elif [ -n "$SITE_NAME" ] ; then
+    LOCAL_SITE_NAME="$SITE_NAME"
+fi
+
+if [ -n "$LOCAL_SITE_NAME" ] ; then
+
+    DDM_SETUP="$VO_ATLAS_SW_DIR/local/bin/setup-ddm"
+
+    # Auto setup Frontier
+    export FRONTIER_SERVER="`. $DDM_SETUP && $VO_ATLAS_SW_DIR/local/bin/getSiteInfo.py -F $LOCAL_SITE_NAME 2>/dev/null`"
+    if [ -z "$FRONTIER_SERVER" ] ; then
+        [ -n "$VERBOSE" ] && echo "No Frontier server for site $LOCAL_SITE_NAME"
+        rc=2
+    else
+        export FRONTIER_LOG_LEVEL=warning
+    fi
+
+    # Auto setup the DQ2_LOCAL_SITE_ID
+    export DQ2_LOCAL_SITE_ID="`. $DDM_SETUP && $VO_ATLAS_SW_DIR/local/bin/getSiteInfo.py -L $LOCAL_SITE_NAME 2>/dev/null`"
+    if [ -z "$DQ2_LOCAL_SITE_ID" ] ; then
+        [ -n "$VERBOSE" ] && echo "No DQ2_LOCAL_SITE_ID for site $LOCAL_SITE_NAME. Using ROAMING"
+        export DQ2_LOCAL_SITE_ID="ROAMING"
+        rc=3
+    fi
+
+    # Auto setup the lib overrides
+    DDMENDPOINT="$DQ2_LOCAL_SITE_ID"
+    DDMSETYPE="`. $DDM_SETUP && $VO_ATLAS_SW_DIR/local/bin/getSiteInfo.py -s $DDMENDPOINT | tr A-Z a-z`"
+    if [ "$DDMSETYPE" == "dcache" ] ; then
+        [ -n "$VERBOSE" ] && echo "Setting up dcache"
+        setup_dcache
+    elif [ "$DDMSETYPE" != "storm" -a "$DDMSETYPE" != "castor" ] ; then
+        [ -n "$VERBOSE" ] && echo "Setting up dpm [$DDMSETYPE]"
+        setup_dpm
+    fi
+
+    # Fix for US sites
+    [ -n "$OSG_APP" ] && export VOMS_PROXY_INFO_DONT_VERIFY_AC="true"
+
+    # Cleanup
+    unset DDM_SETUP
+else
+    unset FRONTIER_SERVER
+    echo "No Local Site Name defined"
+    rc=1
+fi
+
+# Final cleanup
+unset LOCAL_SITE_NAME VERBOSE VERSION
+shift $#
+
+return $rc

@@ -1,0 +1,7 @@
+#!/bin/sh
+PBSHOST=$1
+[ -z "$PBSHOST" ] && PBSHOST="`hostname -s`"
+
+[ -n "$CORECOUNT" ] && echo $CORECOUNT || echo "-1"
+
+exit

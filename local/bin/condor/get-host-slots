@@ -1,0 +1,11 @@
+#!/bin/sh
+### get number of cpu_slots on the host, return in $HOSTSLOTS
+CONDORSTARTDHOST=$1
+[ -z "$CONDORSTARTDHOST" ] && CONDORSTARTDHOST="`hostname -s`"
+
+CONDORSTATUS="`which condor_status 2>/dev/null`"
+
+[ -n "$CONDORSTATUS" ] && HOSTSLOTS=$(condor_status -startd `hostname -s` -xml -attributes DetectedCpus | grep -w DetectedCpus | sed -e "s#<a n=\"DetectedCpus\"><i>##g;s#</i></a>##g;s#</s></a>##g;s# ##g" | sort -n | head -n1 | awk '{print int($1);}' 2>/dev/null )
+[ -n "$HOSTSLOTS" ] && echo $HOSTSLOTS || echo "-1"
+
+exit

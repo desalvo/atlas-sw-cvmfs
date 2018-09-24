@@ -1,0 +1,11 @@
+#!/bin/sh
+
+PYVER="`python -c 'import platform;v=platform.python_version_tuple();print "%s%s" % (v[0],v[1])'`"
+DIR="`dirname $0`"
+export VO_ATLAS_SW_DIR="`readlink -f $DIR/../..`"
+
+if [ $PYVER -lt 25 ] ; then
+    [ -f "$VO_ATLAS_SW_DIR/python/latest/setup.sh" ] && source $VO_ATLAS_SW_DIR/python/latest/setup.sh
+fi
+
+exec ${0}.py $@

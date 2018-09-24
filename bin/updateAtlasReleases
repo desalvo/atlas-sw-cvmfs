@@ -1,6 +1,6 @@
 #!/bin/bash
 
-VERSION="`basename $0` v1.4 - 20130411"
+VERSION="`basename $0` v1.5 - 20170704"
 help() {
     cat <<EOD
 Usage: `basename $0` [OPTION]
@@ -16,10 +16,12 @@ Usage: `basename $0` [OPTION]
    --max-installs <max>               Exit after <max> installations
    --nodb                             Skip the autoconfiguration from the DB
    --platform|-p <platform name>      Force platform for pacman
+   --project-type|-T <project type>   Override the project type
    --release|-r <release name>        Release to be installed/removed,
                                       comma separated list
    --remove|-R                        Remove the give release
    --skip-dbrelease                   Skip the dbrelease installation
+   --template <name>                  Use template <name>
    --trial|-t                         Perform a trial run
    --user|-u <user name>              User name for the ChangeLog
 
@@ -41,7 +43,7 @@ in_array() {
 [ -f "$PWD/.arelinstrc" ] && INSTCONF="$PWD/.arelinstrc"
 [ -f "$HOME/.arelinstrc" ] && INSTCONF="$HOME/.arelinstrc"
 
-DBURL="http://atlas-install.roma1.infn.it/atlas_install/exec/rellist.php?showdeps&showtarget"
+DBURL="http://atlas-install.roma1.infn.it/atlas_install/exec/rellist.php?showdeps&showtarget&showbuild"
 DBRELURL="http://atlas.web.cern.ch/Atlas/GROUPS/DATABASE/pacman4/DBRelease/"
 DEBUG=0
 REMOVE=0
@@ -51,6 +53,7 @@ if [ -s "$INSTCONF" ] ; then
     VO_ATLAS_SW_DIR="`grep -i ^VO_ATLAS_SW_DIR= $INSTCONF | cut -d= -f 2`"
     SITECONF="`grep -i ^AtlasSiteConfig= $INSTCONF | cut -d= -f 2`"
     PHYSPATH="`grep -i ^PhysPath= $INSTCONF | cut -d= -f 2`"
+    PHYSPATHCMAKE="`grep -i ^PhysPathCmake= $INSTCONF | cut -d= -f 2`"
     TAGSFILE="`grep -i ^TagsFile= $INSTCONF | cut -d= -f 2`"
     DEFARCH="`grep -i ^DefaultArch= $INSTCONF | cut -d= -f 2`"
     DEFLINK="`grep -i ^DefaultLink= $INSTCONF | cut -d= -f 2`"
@@ -64,7 +67,7 @@ if [ -s "$INSTCONF" ] ; then
     MAILTO="`grep -i ^MailTo= $INSTCONF | cut -d= -f 2`"
 fi
 
-OPTS=`getopt -o acdfhr:p:Rtu: -l all-autoinstall,all-cvmfs,dbarea:,debug,force,help,install-opts:,max-installs:,nodb,platform:,skip-dbrelease,release:,remove,trial,user: -- "$@"` 
+OPTS=`getopt -o acdfhr:p:RtT:u: -l all-autoinstall,all-cvmfs,dbarea:,debug,force,help,ignore-install-errs,install-opts:,max-installs:,nodb,path:,platform:,project-type:,skip-dbrelease,release:,remove,template:,trial,user: -- "$@"` 
 if [ $? != 0 ] ; then echo "Terminating..."; exit -1 ; fi
 eval set -- "$OPTS"
 
@@ -74,14 +77,18 @@ while true ; do
         --all-cvmfs|-c)        ALLCVMFS=1;shift;;
         --debug|-d)            DEBUG=1;shift;;
         --force|-f)            FORCE=1;shift;;
+        --ignore-install-errs) IGNORE_INSTALL_ERRS="--ignore-install-errs";shift;;
         --install-opts)        INSTALL_OPTIONS="$2";shift 2;;
         --max-installs)        MAXINSTALLS="$2";shift 2;;
         --nodb)                NODB="y";shift;;
+        --path)                REL_PHYSPATH_OVERRIDE="$2";shift 2;;
         --platform|-p)         PACMAN_PLATFORM="--pretend-platform $2";shift 2;;
+        --project-type|-T)     PRJTYPE="-T $2";shift 2;;
         --release|-r)          INSTREL="$2";shift 2;;
         --remove|-R)           REMOVE=1;shift;;
         --user|-u)             USERNAME="$2";shift 2;;
         --skip-dbrelease)      SKIPDBREL=1;shift;;
+        --template)            SKIPDBREL=1;USR_INSTTMPL="$2";shift 2;;
         --dbarea)              DBAREA=$2;shift 2;;
         --trial|-t)            TRIAL="yes";shift;;
         --help|-h)             help;exit;;
@@ -110,6 +117,8 @@ TMPDBRELLIST=/tmp/tmp.dbrellist.$$
 TMPRELLIST=/tmp/tmp.rellist.$$
 TRANSACTION=/tmp/tmp.transaction.$$
 [ -z "$PHYSPATH" ] && PHYSPATH="$PWD/software/@RELARCHDIR@/@RELVER@"
+[ -z "$PHYSPATHCMAKE" ] && PHYSPATHCMAKE="$PWD/software/@CMAKERELDIR@"
+[ -z "$ANALPHYSPATHCMAKE" ] && ANALPHYSPATHCMAKE="$PWD/ASG/@CMAKERELDIR@"
 [ -z "$DEFARCH" ]  && DEFARCH="i686-slc5-gcc43-opt"
 [ -z "$DEFLINK" ]  && DEFLINK="$PWD/software/@RELVER@"
 [ -z "$SITECONF" ] && SITECONF="$PWD/AtlasSiteConfig.sh"
@@ -151,7 +160,7 @@ if [ -s $TMPRELLIST ] ; then
         RELSUBVER="`echo $RELINFO | awk '{print $1}' | cut -d: -f 2`"
         RELSUBVERNODOT="`echo $RELSUBVER | sed 's/\.//g'`"
         RELNAME="`echo $RELINFO | awk '{print $1}'`"
-        RELVER="`echo $RELINFO | awk '{print $1}' | cut -d'-' -f 1 | cut -d'_' -f 1`"
+        RELVER="`echo $RELINFO | awk '{print $1}' | cut -d: -f 2- | cut -d'-' -f 1 | cut -d'_' -f 1`"
         RELMAIN="`echo $RELVER | cut -d. -f 1-3`"
         RELTAG="`echo $RELINFO | awk '{print $3}' | cut -d, -f 3`"
         REQREL="`echo $RELINFO | awk '{print $3}' | cut -d, -f 4 | cut -d- -f 1`"
@@ -159,13 +168,23 @@ if [ -s $TMPRELLIST ] ; then
         RELPKG="`echo $RELINFO | awk '{print $3}' | cut -d, -f 6`"
         RELARCH="`echo $RELINFO | awk '{print $3}' | cut -d, -f 7 | sed -e 's/_/-/g' -e 's/x86-64/x86_64/g'`"
         RELARCHDIR="`echo $RELARCH | sed -e 's/gcc43[0-9]/gcc43/g' -e 's/gcc46[0-9]/gcc46/g' -e 's/gcc48[0-9]/gcc48/g' -e 's/gcc49[0-9]/gcc49/g'`"
+        RELBUILD="`echo $RELINFO | awk '{print $3}' | cut -d, -f 8`"
+        CMAKERELDIR="`echo $RELVER | cut -d: -f2- | cut -d. -f 1-2`"
+        [ "$RELBUILD" == "cmake" ] && REL_PHYSPATH="$PHYSPATHCMAKE" || REL_PHYSPATH="$PHYSPATH"
+        [ -z "$USR_INSTTMPL" ] && unset INSTTMPL || INSTTMPL="`grep -i ^${RELCAT}_${USR_INSTTMPL}_inst= $INSTCONF | cut -d= -f 2`"
+        
         if [ -s "$INSTCONF" ] ; then
-            INSTTMPL="`grep -i ^${RELCAT}_inst= $INSTCONF | cut -d= -f 2`"
+            REL_PHYSPATH_OVERRIDE="`grep -i ^${RELCAT}_${RELBUILD}_path= $INSTCONF | cut -d= -f 2`"
+            [ -n "$REL_PHYSPATH_OVERRIDE" ] && REL_PHYSPATH="$REL_PHYSPATH_OVERRIDE"
+            [ -z "$INSTTMPL" ] && INSTTMPL="`grep -i ^${RELCAT}_${RELBUILD}_inst= $INSTCONF | cut -d= -f 2`"
+            #INSTTMPL="`grep -i ^${RELCAT}_${RELBUILD}_inst= $INSTCONF | cut -d= -f 2`"
+            [ -z "$INSTTMPL" ] && INSTTMPL="`grep -i ^${RELCAT}_inst= $INSTCONF | cut -d= -f 2`"
             if [ -z "$INSTTMPL" ] ; then
                 RELCAT1="`echo $RELCAT | cut -d- -f 1`"
                 INSTTMPL="`grep -i ^${RELCAT1}_inst= $INSTCONF | cut -d= -f 2`"
             fi
-            RMTMPL="`grep -i ^${RELCAT}_rm= $INSTCONF | cut -d= -f 2`"
+            RMTMPL="`grep -i ^${RELCAT}_${RELBUILD}_rm= $INSTCONF | cut -d= -f 2`"
+            [ -z "$RMTMPL" ] && RMTMPL="`grep -i ^${RELCAT}_rm= $INSTCONF | cut -d= -f 2`"
             if [ -z "$RMTMPL" ] ; then
                 RELCAT1="`echo $RELCAT | cut -d- -f 1`"
                 RMTMPL="`grep -i ^${RELCAT1}_rm= $INSTCONF | cut -d= -f 2`"
@@ -198,8 +217,10 @@ if [ -s $TMPRELLIST ] ; then
                 INSTTMPL="-a @RELNAME@ -i @RELVER@ -p @PHYSPATH@ --site-config @SITECONF@ --no-tag $DBOPTS --relative-links --cvmfs-install $PACMAN_PLATFORM"
                 [ "$RELARCHDIR" == "$DEFARCH" -a "$RELMAIN" == "$RELVER" ] && INSTTMPL="$INSTTMPL --physical-link @DEFLINK@"
             fi
-            CMD="`echo $INSTTMPL | sed -e "s#@SITECONF@#$SITECONF#g" -e "s#@PHYSPATH@#$PHYSPATH#g" -e "s#@DEFLINK@#$DEFLINK#g" -e "s#@RELARCH@#$RELARCH#g" -e "s#@RELARCHDIR@#$RELARCHDIR#g" -e "s#@RELNAME@#$RELNAME#g" -e "s#@RELVER@#$RELVER#g" -e "s#@RELSUBVER@#$RELSUBVER#g" -e "s#@RELSUBVERNODOT@#$RELSUBVERNODOT#g" -e "s#@RELMAIN@#$RELMAIN#g" -e "s#@RELTAG@#$RELTAG#g" -e "s#@VO_ATLAS_SW_DIR@#$VO_ATLAS_SW_DIR#g"`"
-            CVMFS_CATALOG_PATH="`echo $PHYSPATH | sed -e "s#@SITECONF@#$SITECONF#g" -e "s#@PHYSPATH@#$PHYSPATH#g" -e "s#@DEFLINK@#$DEFLINK#g" -e "s#@RELARCH@#$RELARCH#g" -e "s#@RELARCHDIR@#$RELARCHDIR#g" -e "s#@RELNAME@#$RELNAME#g" -e "s#@RELVER@#$RELVER#g" -e "s#@RELSUBVER@#$RELSUBVER#g" -e "s#@RELSUBVERNODOT@#$RELSUBVERNODOT#g" -e "s#@RELMAIN@#$RELMAIN#g" -e "s#@RELTAG@#$RELTAG#g" -e "s#@VO_ATLAS_SW_DIR@#$VO_ATLAS_SW_DIR#g"`"
+            [ -n "$PRJTYPE" ] && INSTTMPL="$INSTTMPL $PRJTYPE"
+            [ -n "$IGNORE_INSTALL_ERRS" ] && INSTTMPL="$INSTTMPL $IGNORE_INSTALL_ERRS"
+            CMD="`echo $INSTTMPL | sed -e "s#@SITECONF@#$SITECONF#g" -e "s#@PHYSPATH@#$REL_PHYSPATH#g" -e "s#@DEFLINK@#$DEFLINK#g" -e "s#@RELARCH@#$RELARCH#g" -e "s#@RELARCHDIR@#$RELARCHDIR#g" -e "s#@RELNAME@#$RELNAME#g" -e "s#@RELVER@#$RELVER#g" -e "s#@RELSUBVER@#$RELSUBVER#g" -e "s#@RELSUBVERNODOT@#$RELSUBVERNODOT#g" -e "s#@RELMAIN@#$RELMAIN#g" -e "s#@RELTAG@#$RELTAG#g" -e "s#@VO_ATLAS_SW_DIR@#$VO_ATLAS_SW_DIR#g" -e "s#@CMAKERELDIR@#$CMAKERELDIR#g"`"
+            CVMFS_CATALOG_PATH="`echo $REL_PHYSPATH | sed -e "s#@SITECONF@#$SITECONF#g" -e "s#@PHYSPATH@#$REL_PHYSPATH#g" -e "s#@DEFLINK@#$DEFLINK#g" -e "s#@RELARCH@#$RELARCH#g" -e "s#@RELARCHDIR@#$RELARCHDIR#g" -e "s#@RELNAME@#$RELNAME#g" -e "s#@RELVER@#$RELVER#g" -e "s#@RELSUBVER@#$RELSUBVER#g" -e "s#@RELSUBVERNODOT@#$RELSUBVERNODOT#g" -e "s#@RELMAIN@#$RELMAIN#g" -e "s#@RELTAG@#$RELTAG#g" -e "s#@VO_ATLAS_SW_DIR@#$VO_ATLAS_SW_DIR#g" -e "s#@CMAKERELDIR@#$CMAKERELDIR#g"`"
             [ -n "$REQREL" ] && CMD="`echo $CMD | sed -e "s#@REQREL@#$REQREL#g"`"
             echo "####################################################"
             echo "#  Installing $RELPKG"
@@ -256,7 +277,7 @@ if [ -s $TMPRELLIST ] ; then
                 RMTMPL="-a @RELNAME@ -r @RELVER@ -p @PHYSPATH@ --site-config @SITECONF@ --no-tag --dbrelease-clean --cvmfs-install"
                 [ "$RELARCHDIR" == "$DEFARCH" -a "$RELMAIN" == "$RELVER" ] && RMTMPL="$RMTMPL --physical-link @DEFLINK@"
             fi
-            CMD="`echo $RMTMPL | sed -e "s#@SITECONF@#$SITECONF#g" -e "s#@PHYSPATH@#$PHYSPATH#g" -e "s#@DEFLINK@#$DEFLINK#g" -e "s#@RELARCH@#$RELARCH#g" -e "s#@RELARCHDIR@#$RELARCHDIR#g" -e "s#@RELNAME@#$RELNAME#g" -e "s#@RELVER@#$RELVER#g" -e "s#@RELSUBVER@#$RELSUBVER#g" -e "s#@RELSUBVERNODOT@#$RELSUBVERNODOT#g" -e "s#@RELMAIN@#$RELMAIN#g" -e "s#@RELTAG@#$RELTAG#g" -e "s#@VO_ATLAS_SW_DIR@#$VO_ATLAS_SW_DIR#g"`"
+            CMD="`echo $RMTMPL | sed -e "s#@SITECONF@#$SITECONF#g" -e "s#@PHYSPATH@#$REL_PHYSPATH#g" -e "s#@DEFLINK@#$DEFLINK#g" -e "s#@RELARCH@#$RELARCH#g" -e "s#@RELARCHDIR@#$RELARCHDIR#g" -e "s#@RELNAME@#$RELNAME#g" -e "s#@RELVER@#$RELVER#g" -e "s#@RELSUBVER@#$RELSUBVER#g" -e "s#@RELSUBVERNODOT@#$RELSUBVERNODOT#g" -e "s#@RELMAIN@#$RELMAIN#g" -e "s#@RELTAG@#$RELTAG#g" -e "s#@VO_ATLAS_SW_DIR@#$VO_ATLAS_SW_DIR#g" -e "s#@CMAKERELDIR@#$CMAKERELDIR#g"`"
             [ -n "$REQREL" ] && CMD="`echo $CMD | sed -e "s#@REQREL@#$REQREL#g"`"
             echo "####################################################"
             echo "#  Removing $RELPKG"

@@ -1,0 +1,10 @@
+#!/bin/sh
+QNAME=$1
+CORECOUNT=$2
+[ -z "$QNAME" ] && exit 1
+
+QSTAT="`which qstat 2>/dev/null`"
+[ -n "$QSTAT" ] && QSTATRES="`qstat -Q 2> /dev/null | grep "^${QNAME} " | awk -v corecount=$CORECOUNT '{print "-1,"$6*corecount","$7*corecount","$8*corecount}'`"
+[ -n "$QSTATRES" ] && echo $QSTATRES
+
+exit

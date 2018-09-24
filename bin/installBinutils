@@ -1,0 +1,71 @@
+#!/bin/sh
+CUR_DIR=${PWD}
+AYUM_DIR=${HOME}/ayum
+RELAREA=${1}
+RELLOC="/cvmfs/atlas.cern.ch/repo/sw/software/${RELAREA}"
+
+[ -d $RELLOC/sw/lcg/releases/gcc/6.2binutils ] && exit 0
+
+cd ${AYUM_DIR}
+git pull
+./configure.ayum -i ${RELLOC} -D > yum.conf
+# Remove the unnecessary line from the generated file:
+sed 's/AYUM package location.*//' yum.conf > yum.conf.fixed
+mv -f yum.conf.fixed yum.conf
+
+# Configure the ayum repositories:
+cat - >./etc/yum.repos.d/lcg.repo <<EOF
+[lcg-repo]
+name=LCG Repository
+#baseurl=http://cern.ch/service-spi/external/rpms/lcg
+baseurl=http://lcgpackages.web.cern.ch/lcgpackages/rpms
+prefix=${RELLOC}/sw/lcg/releases
+enabled=1
+EOF
+
+cat - >./etc/yum.repos.d/atlas-offline-data.repo <<EOF
+[atlas-offline-data]
+name=ATLAS offline data packages
+baseurl=http://cern.ch/atlas-software-dist-eos/RPMs/data
+enabled=1
+EOF
+
+cat - >./etc/yum.repos.d/tdaq-nightly.repo <<EOF
+[tdaq-nightly]
+name=nightly snapshots of TDAQ releases
+baseurl=http://cern.ch/atlas-tdaq-sw/yum/tdaq/nightly
+enabled=1
+EOF
+
+cat - >./etc/yum.repos.d/atlas-offline-releases.repo <<EOF
+[atlas-offline-releases-slc6]
+name=ATLAS offline releases SLC6
+baseurl=http://cern.ch/atlas-software-dist-eos/RPMs/releases/slc6
+enabled=1
+
+[atlas-offline-releases-cc7]
+name=ATLAS offline releases CC7
+baseurl=http://cern.ch/atlas-software-dist-eos/RPMs/releases/cc7
+enabled=0
+EOF
+
+# Setup environment to run the ayum command:
+shopt -s expand_aliases
+source ./setup.sh
+cd ${CUR_DIR}
+
+lock-install install-binutils
+if [ $? -eq 0 ] ; then
+  cvmfs_server transaction atlas.cern.ch
+  ayum -y install binutils_2.28_x86_64_slc6 gcc_6.2binutils_x86_64_slc6_gcc62_opt
+  cd $RELLOC/sw/lcg/releases/gcc
+  ln -s 6.2binutils 6.2.0binutils
+  cd $CUR_DIR
+  sed -i -e "s#^\(export PATH=/cvmfs/sft.cern.ch.*\)#\#\1\nexport PATH=$RELLOC/sw/lcg/releases/binutils/2.28/x86_64-slc6/bin:\${PATH}#g" $RELLOC/sw/lcg/releases/gcc/6.2binutils/x86_64-slc6-gcc62-opt/setup.sh
+  sed -i -e "s#^\(setenv PATH /cvmfs/sft.cern.ch.*\)#\#\1\nsetenv PATH $RELLOC/sw/lcg/releases/binutils/2.28/x86_64-slc6/bin:\${PATH}#g" -e "s#^\(set LCG_contdir = /cvmfs/sft.cern.ch.*\)#\#\1\nset LCG_contdir = $RELLOC/sw/lcg/releases#g" $RELLOC/sw/lcg/releases/gcc/6.2binutils/x86_64-slc6-gcc62-opt/setup.csh
+  cvmfs-changelog --add "gcc_6.2binutils for release ${RELAREA}"
+  cvmfs_server publish atlas.cern.ch
+fi
+unlock-install
+
+exit

@@ -1,0 +1,12 @@
+# Setup the AGI clients
+if [ -f $VO_ATLAS_SW_DIR/agis/x86_64-slc5-gcc43-opt/latest/setup.sh ] ; then
+  . $VO_ATLAS_SW_DIR/agis/x86_64-slc5-gcc43-opt/latest/setup.sh
+fi
+
+# Setup the DQ2 clients
+if [ -f $VO_ATLAS_SW_DIR/ddm/latest/setup.sh ] ; then
+  . $VO_ATLAS_SW_DIR/ddm/latest/setup.sh
+
+  # Override the DQ2 setup to use the AGIS ToA
+  export DQ2_HOME="$VO_ATLAS_SW_DIR/local"
+fi

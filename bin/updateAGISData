@@ -57,6 +57,7 @@ if [ -s "$INSTCONF" ] ; then
     SCHEDCONFURL="`grep -i ^AGISSchedconfURL= $INSTCONF | cut -d= -f 2-`"
     DDMEP="`grep -i ^AGISDDMendpointURL= $INSTCONF | cut -d= -f 2-`"
     DDMOS="`grep -i ^AGISDDMobjectstoresURL= $INSTCONF | cut -d= -f 2-`"
+    DDMBL="`grep -i ^AGISDDMblacklistingURL= $INSTCONF | cut -d= -f 2`"
     OSSVC="`grep -i ^AGISOSServicesURL= $INSTCONF | cut -d= -f 2-`"
     CVMFSTRANSACTION="`grep -i ^cvmfs_transaction= $INSTCONF | cut -d= -f 2`"
     CVMFSPUBLISH="`grep -i ^cvmfs_publish= $INSTCONF | cut -d= -f 2`"
@@ -105,6 +106,10 @@ let currrc=$currrc+$?
 
 # DDMendpointsObjectstores
 download agis_ddmendpoints_objectstores.json "$DDMOS"
+let currrc=$currrc+$?
+
+# DDMblacklisting
+download agis_ddmblacklisting.json "$DDMBL"
 let currrc=$currrc+$?
 
 # OSServices

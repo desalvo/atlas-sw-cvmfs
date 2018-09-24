@@ -1,0 +1,14 @@
+#!/bin/sh
+### get number of cpu_slots on the host in this cluster, return in $ALLSLOTS
+
+QUEUE=$1
+[ -z "$QUEUE" ] && exit 1
+
+CONDORSTATUS="`which condor_status 2>/dev/null`"
+
+[ -n "$CONDORSTATUS" ] && ALLSLOTS="$( condor_status -xml -attributes DetectedCpus,Machine,TotalSlotCpus,ChildCpus,Name,Cpus 2>/dev/null | sed -e "s#<a n=\"Name\"><s>#Name|#g;s#<a n=\"Machine\"><s>#Machine|#g;s#<a n=\"MyType\"><s>#MyType|#g;s#<a n=\"TargetType\"><s>#TargetType|#g;s#<a n=\"Cpus\"><i>#Cpus|#g;s#<a n=\"DetectedCpus\"><i>#DetectedCpus|#g;s#<a n=\"TotalSlotCpus\"><i>#TotalSlotCpus|#g;s#</i></a>##g;s#</s></a>##g;s#</r></a>##g;s# ##g" | awk '/<c>/{if (x)print x;x="";}{x=(!x)?$0:x","$0;}END{print x;}' | grep -v "Cpus|0"  | grep ",Cpus|" | sed -e "s#,#\n#g" | grep -w Cpus | cut -f2 -d\| | awk 'BEGIN{s=0;}{s+=$1;}END{print s;}' 2>/dev/null )"
+[ -n "$ALLSLOTS" ] && echo $ALLSLOTS || echo "-1"
+
+exit
+
+

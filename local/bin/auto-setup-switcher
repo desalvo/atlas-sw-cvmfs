@@ -1,0 +1,23 @@
+#!/bin/sh
+if [ -z "$VO_ATLAS_SW_DIR" ] ; then
+    export VO_ATLAS_SW_DIR="/cvmfs/atlas.cern.ch/repo/sw"
+fi
+AS_SITE_LIST="$VO_ATLAS_SW_DIR/local/etc/auto-setup-switcher.conf"
+ASMODE="none"
+
+# Choose which site name to use
+if [ -n "$CUSTOM_SITE_NAME" ] ; then
+    LOCAL_SITE_NAME="$CUSTOM_SITE_NAME"
+    unset CUSTOM_SITE_NAME
+elif [ -n "$ATLAS_SITE_NAME" ] ; then
+    LOCAL_SITE_NAME="$ATLAS_SITE_NAME"
+elif [ -n "$SITE_NAME" ] ; then
+    LOCAL_SITE_NAME="$SITE_NAME"
+fi
+
+# Check if this site is set for auto setup
+if [ -n "$LOCAL_SITE_NAME" -a -s "$AS_SITE_LIST" ] ; then
+    [ -n "`grep ^${LOCAL_SITE_NAME}$ ${AS_SITE_LIST} 2> /dev/null`" ] && ASMODE="auto"
+fi
+echo $ASMODE
+exit

@@ -1,0 +1,9 @@
+#!/bin/sh
+CONDORSTATUS="`which condor_status 2>/dev/null`"
+
+which condor_status 2>&1
+condor_status -xml | egrep -w "(DetectedCpus|\"Name\"|\"Cpus\"|\"State\"|\"ChildName\")" | sed -e "s#<a n=\"DetectedCpus\"><i>#DetectedCpus\|#g;s#<a n=\"Name\"><s>#Name|#g;s#<a n=\"Cpus\"><i>#Cpus|#g;s#</i></a>##g;s#</s></a>##g;s#<a n=\"State\"><s>#State\|#g;s# ##g" | awk '/DetectedCpus/{if (x)print x;x="";}{x=(!x)?$0:x","$0;}END{print x;}' 2>&1
+
+condor_status -xml -attributes Activity,DetectedCpus,TotalCpus,TotalSlotCpus,ChildCpus,Machine,Name,Cpus,State
+
+exit

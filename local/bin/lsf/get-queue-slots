@@ -1,0 +1,28 @@
+#!/bin/sh
+QUEUE=$1
+[ -z "$QUEUE" ] && exit 1
+
+BQUEUES="`which bqueues 2>/dev/null`"
+if [ -z "$BQUEUES" -a -s "/etc/lsf/lsf.conf" ] ; then
+    . /etc/lsf/lsf.conf
+    export PATH=$LSF_BINDIR:$PATH
+    BQUEUES="`which bqueues 2>/dev/null`"
+fi
+[ -n "$BQUEUES" ] && HOSTS="`bqueues -r $QUEUE | grep ^HOSTS: | cut -d: -f 2-`"
+for entry in $HOSTS; do
+    if [ "`echo $entry | grep /$`" == "$entry" ] ; then
+        # This is a host group
+        LSFHOSTGRP="`echo $entry | sed 's#/$##g'`"
+        LSFHOSTLIST="`bmgroup -r $LSFHOSTGRP | grep ^$LSFHOSTGRP | awk '{for (i=2; i<=NF; i++) print $i}'`"
+    else
+        # This is a plain host
+        LSFHOSTLIST="$entry"
+    fi
+    [ -z "$LSFHOSTS" ] && LSFHOSTS="$LSFHOSTLIST" || LSFHOSTS="$LSFHOSTS $LSFHOSTLIST"
+done
+
+BHOSTS="`which bhosts 2>/dev/null`"
+[ -n "$BHOSTS" -a -n "$LSFHOSTS" ] && ALLSLOTS="`bhosts $LSFHOSTS | grep -v ^HOST_NAME | awk 'BEGIN{sum=0}{sum+=$4}END{print sum}'`"
+[ -n "$ALLSLOTS" ] && echo $ALLSLOTS || echo "-1"
+
+exit

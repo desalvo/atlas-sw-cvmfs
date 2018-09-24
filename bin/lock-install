@@ -3,6 +3,21 @@ MAINLOCK=$HOME/.install.lock
 MAINLOCKOPTS="-60 -r 180"
 [ -n "$1" ] && LOCKOWNER="$1" || LOCKOWNER="manual_run"
 
+# Check if the repo is mounted
+while true; do
+  if [ -d /cvmfs/atlas.cern.ch/repo ] ; then
+    break
+  else
+    echo "/cvmfs/atlas.cern.ch/repo not found, remounting and checking"
+    cvmfs_suid_helper rw_umount atlas.cern.ch
+    cvmfs_suid_helper rdonly_umount atlas.cern.ch
+    cvmfs_suid_helper rdonly_mount atlas.cern.ch
+    cvmfs_suid_helper rw_mount atlas.cern.ch
+    cvmfs_suid_helper open atlas.cern.ch
+  fi
+  sleep 10s
+done
+
 # Wait for the main lock
 echo "Setting or waiting for lock to clear"
 eval lockfile $MAINLOCKOPTS $MAINLOCK

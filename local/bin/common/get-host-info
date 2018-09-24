@@ -1,0 +1,13 @@
+#!/bin/sh
+
+PROCESSORS="`cat /proc/cpuinfo | grep ^processor | wc -l`"
+PROCMODEL="`cat /proc/cpuinfo | grep '^model name' | cut -d: -f 2- | sed 's/^ *//g' | sort | uniq`"
+MEMTOTAL="`cat /proc/meminfo | grep ^MemTotal | awk '{print $2}'`"
+LOCALIP="`ip route get 1 | awk '{print $NF;exit}'`"
+LOCALHOST="`hostname -f`"
+KERNELNAME="`uname -s`"
+MACHINENAME="`uname -m`"
+
+echo "${LOCALIP},${LOCALHOST},${KERNELNAME},${MACHINENAME},${PROCESSORS},${MEMTOTAL},'${PROCMODEL}'"
+
+exit

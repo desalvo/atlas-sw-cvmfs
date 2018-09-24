@@ -1,0 +1,22 @@
+#!/bin/sh
+
+lock-install
+cvmfs_server transaction
+RELPATH=$1
+RELEASE=$2
+BASEREL=`echo $RELEASE | cut -d . -f 1-3`
+RELDIR=$RELPATH/$BASEREL
+RELCMTCONFIG=`basename $RELPATH`
+
+cd $RELDIR
+. cmtsite/asetup.sh AtlasOffline $BASEREL --cmtconfig=$RELCMTCONFIG
+reconfrc=1
+if [ -d "AtlasProduction/$RELEASE/AtlasProductionRelease/cmt" ] ; then
+    cd AtlasProduction/$RELEASE/AtlasProductionRelease/cmt
+    cmt br - 'cmt -no_cleanup config'; cmt br - cmt post_install
+    reconfrc=$?
+fi
+
+[ $reconfrc -eq 0 ] && cvmfs_server publish
+unlock-install
+exit

@@ -1,0 +1,8 @@
+#!/bin/sh
+QUEUE=$1
+[ -z "$QUEUE" ] && exit 1
+
+ALLSLOTS="-1"
+echo $ALLSLOTS
+
+exit

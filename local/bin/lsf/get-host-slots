@@ -1,0 +1,14 @@
+#!/bin/sh
+LSFHOST=$1
+[ -z "$LSFHOST" ] && LSFHOST="`hostname -s`"
+
+BHOSTS="`which bhosts 2>/dev/null`"
+if [ -z "$BHOSTS" -a -s "/etc/lsf/lsf.conf" ] ; then
+    . /etc/lsf/lsf.conf
+    export PATH=$LSF_BINDIR:$PATH
+    BHOSTS="`which bhosts 2>/dev/null`"
+fi
+[ -n "$BHOSTS" ] && HOSTSLOTS="`bhosts $LSFHOST | grep "^$LSFHOST " | awk '{print $4}'`"
+[ -n "$HOSTSLOTS" ] && echo $HOSTSLOTS || echo "-1"
+
+exit

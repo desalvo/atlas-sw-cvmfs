@@ -13,6 +13,7 @@ if [ -s "$INSTCONF" ] ; then
     USERNAME="`grep -i ^UserName= $INSTCONF | cut -d= -f 2`"
     SVNUSERNAME="`grep -i ^SvnUserName= $INSTCONF | cut -d= -f 2`"
     PILOTPKG="`grep -i ^PandaPilotPackage= $INSTCONF | cut -d= -f 2`"
+    PILOTARCHIVE="`grep -i ^PandaPilotArchive= $INSTCONF | cut -d= -f 2`"
     CVMFSTRANSACTION="`grep -i ^cvmfs_transaction= $INSTCONF | cut -d= -f 2`"
     CVMFSABORT="`grep -i ^cvmfs_abort= $INSTCONF | cut -d= -f 2`"
     CVMFSPUBLISH="`grep -i ^cvmfs_publish= $INSTCONF | cut -d= -f 2`"
@@ -39,6 +40,8 @@ if [ ! -f $DEST/$PILOTPKG/latest/PILOTVERSION ] ; then
     currrc=$?
     if [ $currrc -eq 0 ] ; then
         cp -f $DEST/$PILOTPKG/latest/PILOTVERSION $DEST/$PILOTPKG/tag
+        PILOTVERSION="`cat $DEST/$PILOTPKG/latest/PILOTVERSION | awk '{print $NF}'`"
+        [ ! -d "$DEST/$PILOTPKG/$PILOTVERSION" ] && cp -a $DEST/$PILOTPKG/latest $DEST/$PILOTPKG/$PILOTVERSION
         echo "	* + PandaPilot `cat $DEST/$PILOTPKG/latest/PILOTVERSION`" >> $TRANSACTION
         let rc=$rc+$currrc
     fi
@@ -49,7 +52,22 @@ else
     currrc=$?
     if [ $currrc -eq 0 ] ; then
         if [ "`cat $DEST/$PILOTPKG/latest/PILOTVERSION`" != "`cat $DEST/$PILOTPKG/tag`" ] ; then
+            if [ ! -d $DEST/$PILOTARCHIVE ] ; then
+                mkdir $DEST/$PILOTARCHIVE
+                touch $DEST/.cvmfscatalog
+            fi
+            PILOTARCHIVE_PKG=$DEST/$PILOTARCHIVE/${PILOTPKG}-`cat $DEST/$PILOTPKG/latest/PILOTVERSION | sed 's/ /-/g'`.tar.gz
+            PILOTARCHIVE_LATEST=$DEST/$PILOTARCHIVE/pilotcode-`cat $DEST/$PILOTPKG/latest/PILOTVERSION | awk '{print $1}'`.tar.gz
+            echo "PILOTARCHIVE_PKG=$PILOTARCHIVE_PKG"
+            echo "PILOTARCHIVE_LATEST=$PILOTARCHIVE_LATEST"
+            tar cfz $PILOTARCHIVE_PKG *
+            if [ $? -eq 0 -a -s $PILOTARCHIVE_PKG ] ; then
+                [ -L $PILOTARCHIVE_LATEST ] && rm -f $PILOTARCHIVE_LATEST
+                ln -s  `basename $PILOTARCHIVE_PKG` $PILOTARCHIVE_LATEST
+            fi
             cp -f $DEST/$PILOTPKG/latest/PILOTVERSION $DEST/$PILOTPKG/tag
+            PILOTVERSION="`cat $DEST/$PILOTPKG/latest/PILOTVERSION | awk '{print $NF}'`"
+            [ ! -d "$DEST/$PILOTPKG/$PILOTVERSION" ] && cp -a $DEST/$PILOTPKG/latest $DEST/$PILOTPKG/$PILOTVERSION
             echo "	* + PandaPilot `cat $DEST/$PILOTPKG/latest/PILOTVERSION`" >> $TRANSACTION
             let rc=$rc+$currrc
         fi

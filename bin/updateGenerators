@@ -8,6 +8,7 @@
 
 DEST="/cvmfs/atlas.cern.ch/repo/sw/Generators"
 PDFDIR="lhapdfsets/current"
+MADGRAPHMODELSDIR="madgraph/models"
 if [ -s "$INSTCONF" ] ; then
     DEST="`grep -i ^GeneratorsPath= $INSTCONF | cut -d= -f 2`"
     CHANGELOG="`grep -i ^ChangeLog= $INSTCONF | cut -d= -f 2`"
@@ -90,6 +91,91 @@ EOD
         fi
     fi
 done
+
+# MadGraphModels
+#[ ! -d $DEST/$MADGRAPHMODELSDIR ] && mkdir -p $DEST/$MADGRAPHMODELSDIR/latest
+#[ ! -f $DEST/$MADGRAPHMODELSDIR/.cvmfscatalog ] && touch $DEST/$MADGRAPHMODELSDIR/.cvmfscatalog
+#timeout 60s svn ls svn+ssh://$SVNUSERNAME@svn.cern.ch/reps/atlasoff/Generators/MadGraphModels/tags > $TMPTAGS
+#if [ $? -eq 0 ] ; then
+#    latesttag="`cat $TMPTAGS | tail -n 1`"
+#else
+#    unset latesttag
+#fi
+#rm -f $TMPTAGS
+#if [ -n "$latesttag" ] ; then
+#    if [ ! -f $DEST/$MADGRAPHMODELSDIR/tag ] ; then
+#        echo "Checking out MadGraphModels $latesttag into $DEST/$MADGRAPHMODELSDIR/latest"
+#        svn co svn+ssh://$SVNUSERNAME@svn.cern.ch/reps/atlasoff/Generators/MadGraphModels/tags/$latesttag $DEST/$MADGRAPHMODELSDIR/latest
+#        currrc=$?
+#        if [ $currrc -eq 0 ] ; then
+#            echo $latesttag > $DEST/$MADGRAPHMODELSDIR/tag
+#            echo "	* + MadGraphModels $latesttag" > ${TRANSACTION}.latest
+#            cat ${TRANSACTION}.latest >> $TRANSACTION
+#            let rc=$rc+$currrc
+#        fi
+#    else
+#        if [ "`cat $DEST/$MADGRAPHMODELSDIR/tag`" != "$latesttag" ] ; then
+#            cd $DEST/$MADGRAPHMODELSDIR/latest
+#            echo "Updating MadGraphModels from `cat $DEST/$MADGRAPHMODELSDIR/tag` to $latesttag in $DEST/$MADGRAPHMODELSDIR/latest"
+#            svn switch svn+ssh://$SVNUSERNAME@svn.cern.ch/reps/atlasoff/Generators/MadGraphModels/tags/$latesttag
+#            currrc=$?
+#            if [ $currrc -eq 0 ] ; then
+#                echo $latesttag > $DEST/$MADGRAPHMODELSDIR/tag
+#                echo "	* + MadGraphModels $latesttag" > ${TRANSACTION}.latest
+#                cat ${TRANSACTION}.latest >> $TRANSACTION
+#                let rc=$rc+$currrc
+#            fi
+#        fi
+#    fi
+#    BADDIRS="`\ls -d $DEST/$MADGRAPHMODELSDIR/latest/*-??-??-?? 2>/dev/null | wc -l`"
+#    if [ $BADDIRS -gt 0 ] ; then
+#        eval $CVMFSABORT
+#        if [ -n "$MAILTO" ] ; then
+#            mail -s "[ATLAS CVMFS ERROR] `hostname`" "$MAILTO" <<EOD
+#Dear admin,
+#the following releases failed to install in CVMFS @ `hostname` due to a bad checkout
+#
+#`cat ${TRANSACTION}.latest`
+#
+#Regards,
+#
+#     Your faithful installation agent
+#EOD
+#        fi
+#        rm -f ${TRANSACTION}*
+#        # Clear the install lock
+#        $HOME/bin/unlock-install
+#        exit 100
+#    fi
+#fi
+
+currrc=0
+kinit -kt ${SVNUSERNAME}.keytab ${SVNUSERNAME}@CERN.CH
+MGSRC="https://:@gitlab.cern.ch:8443/atlas-generators-team/MadGraphModels.git"
+MGDST="$DEST/$MADGRAPHMODELSDIR/latest"
+echo "Syncing MadGraphModels from $MGSRC to $MGDST"
+if [ ! -d `dirname $MGDST` ] ; then
+    mkdir -p `dirname $MGDST`
+    git clone $MGSRC $MGDST
+    currrc=$?
+    [ $currrc -eq 0 ] && touch ${MGDST}/.cvmfscatalog
+else
+    cd $MGDST
+    git fetch
+    HEADREV=$(git rev-parse HEAD)
+    LOCALREV=$(git rev-parse @{u})
+    if [ $HEADREV != $LOCALREV ]; then
+        git pull
+        currrc=$?
+    else
+        currrc=10
+    fi
+fi
+if [ $currrc -eq 0 ] ; then
+    TSTAMP="`date +%Y%m%d%H%M`"
+    echo "	* + MadGraphModels $TSTAMP" >> $TRANSACTION
+fi
+let rc=$rc+$currrc
 
 # PDFSets
 # For this to work, since the synchronization is performed without afs tokens,

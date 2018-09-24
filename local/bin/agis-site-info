@@ -1,0 +1,16 @@
+#!/bin/sh
+PYVER="`python -c 'import platform;v=platform.python_version_tuple();print "%s%s" % (v[0],v[1])'`"
+GLV="`getconf  GNU_LIBC_VERSION | awk '{print $NF}' | awk -F. '{printf "%d%02d", $1, $2}'`"
+if [ $PYVER -lt 25 -a $GLV -le 205 ] ; then
+    # SL5 class machines (glibc <= 2.5)
+    [ -f "$VO_ATLAS_SW_DIR/python/latest/setup.sh" ] && source $VO_ATLAS_SW_DIR/python/latest/setup.sh
+    if [ -n "$PYTHON_HOME" ] ; then
+        PYSTR="`python -c 'import platform;v=platform.python_version_tuple();print "%s.%s" % (v[0],v[1])'`"
+        for PYDIR in lib64 lib; do
+            PYPATH="${PYTHON_HOME}/`uname -m`-slc5-gcc43-opt/python/$PYDIR/python${PYSTR}/site-packages"
+            [ -d "$PYPATH" -a -n "$PYTHONPATH" ] && export PYTHONPATH="${PYPATH}:${PYTHONPATH}"
+        done
+    fi
+fi
+`dirname $0`/agis_site_info.py $@
+exit $?

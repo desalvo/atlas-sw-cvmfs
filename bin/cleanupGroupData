@@ -5,11 +5,9 @@
 # Configuration scripts
 [ -f "$PWD/.arelinstrc" ] && INSTCONF="$PWD/.arelinstrc"
 [ -f "$HOME/.arelinstrc" ] && INSTCONF="$HOME/.arelinstrc"
-GDEXCLLIST="$HOME/.groupdata.exclude"
-[ ! -f "$GDEXCLLIST" ] && touch $GDEXCLLIST
 
 if [ -s "$INSTCONF" ] ; then
-    GDPATHS="`grep -i ^GroupDataPath= $INSTCONF | cut -d= -f 2`"
+    GDCPATHS="`grep -i ^GroupDataCleanupPath= $INSTCONF | cut -d= -f 2`"
     CHANGELOG="`grep -i ^ChangeLog= $INSTCONF | cut -d= -f 2`"
     USERNAME="`grep -i ^UserName= $INSTCONF | cut -d= -f 2`"
     SVNUSERNAME="`grep -i ^SvnUserName= $INSTCONF | cut -d= -f 2`"
@@ -21,26 +19,24 @@ fi
 
 TRANSACTION=/tmp/tmp.transaction.$$
 CURRDIR="$PWD"
-[ -z "$MAXFILES" ] && MAXFILES=500
 
 rm -f ${TRANSACTION}*
 rc=0
-echo "Preparing transfer"
+echo "Preparing cleanup"
 kinit -kt ${SVNUSERNAME}.keytab ${SVNUSERNAME}@CERN.CH
-[ -z "$GDPATHS" ] && GDPATHS="/afs/cern.ch/atlas/www/GROUPS/DATABASE/GroupData/:/cvmfs/atlas.cern.ch/repo/sw/database/GroupData"
-GDPINDX=0
-for GDPATH in `echo $GDPATHS | sed 's/,/ /g'`; do
-  GDSRC="lxplus.cern.ch:`echo $GDPATH | cut -d: -f 1`"
-  GDDST="`echo $GDPATH | cut -d: -f 2`"
-  let GDPINDX=$GDPINDX+1
-  echo "Syncing GroupData [$GDPINDX] from $GDSRC to $GDDST"
-  rsync -nirl -e "ssh -l ${SVNUSERNAME} -i $HOME/.ssh/${SVNUSERNAME}_id_dsa -o GSSAPIDelegateCredentials=yes -o GSSAPIAuthentication=yes" $GDSRC $GDDST | \
-     egrep -v '^sending|^sent|^total|^cannot|^could not|^$' | egrep '^>|^c' | awk '{print $2}' | head -n $MAXFILES | grep -v -f ${GDEXCLLIST} | tee ${TRANSACTION}.flist
+GDCPINDX=0
+for GDCPATH in `echo $GDCPATHS | sed 's/,/ /g'`; do
+  GDCSRC="lxplus.cern.ch:`echo $GDCPATH | cut -d: -f 1`"
+  GDCDST="`echo $GDCPATH | cut -d: -f 2`"
+  let GDCPINDX=$GDCPINDX+1
+  echo "Cleaning GroupData [$GDCPINDX] from $GDCSRC to $GDCDST"
+  rsync -nirl --delete --existing --ignore-existing -e "ssh -l ${SVNUSERNAME} -i $HOME/.ssh/${SVNUSERNAME}_id_dsa -o GSSAPIDelegateCredentials=yes -o GSSAPIAuthentication=yes" $GDCSRC $GDCDST | \
+     egrep -v '^sending|^sent|^total|^cannot|^could not|^$' | egrep '^\*deleting' | awk '{print $2}' | tee ${TRANSACTION}.flist
   [ -n "$DEBUG" ] && cat ${TRANSACTION}.flist
   if [ `cat ${TRANSACTION}.flist | wc -l` -gt 0 ] ; then
       # Wait for the main lock
       if [ ! -f $TRANSACTION ] ; then
-          $HOME/bin/lock-install updateGroupData
+          $HOME/bin/lock-install cleanupGroupData
           rc=$?
       else
           rc=0
@@ -49,18 +45,17 @@ for GDPATH in `echo $GDPATHS | sed 's/,/ /g'`; do
           exit $rc
       fi
       [ ! -f $TRANSACTION ] && eval $CVMFSTRANSACTION
-      echo "Synchronizing `cat ${TRANSACTION}.flist | wc -l` files"
-      rsync -dlptgov --delete --files-from=${TRANSACTION}.flist -e "ssh -l ${SVNUSERNAME} -i $HOME/.ssh/${SVNUSERNAME}_id_dsa -o GSSAPIDelegateCredentials=yes -o GSSAPIAuthentication=yes" $GDSRC $GDDST 2> ${TRANSACTION}.err
+      echo "Deleting `cat ${TRANSACTION}.flist | wc -l` files"
+      rsync -r --delete --existing --ignore-existing -e "ssh -l ${SVNUSERNAME} -i $HOME/.ssh/${SVNUSERNAME}_id_dsa -o GSSAPIDelegateCredentials=yes -o GSSAPIAuthentication=yes" $GDCSRC $GDCDST 2> ${TRANSACTION}.err
       rc=$?
       if [ $rc -eq 0 -a -s "${TRANSACTION}.flist" ] ; then
           TSTAMP="`date +%Y%m%d%H%M`"
-          echo "	* + GroupData $GDSRC $TSTAMP" >> $TRANSACTION
+          echo "	* + GroupData cleanup $GDSRC $TSTAMP" >> $TRANSACTION
       else
-          cat ${TRANSACTION}.flist
           cat ${TRANSACTION}.err
       fi
   else
-      echo "No files to synchronize from $GDSRC to $GDDST"
+      echo "No files to cleanup from $GDCSRC to $GDCDST"
       rm -f ${TRANSACTION}.flist
   fi
 done
@@ -119,7 +114,7 @@ if [ $rc -eq 0 ] ; then
             echo "Sending notification"
             mail -s "[ATLAS CVMFS UPDATE] `hostname`" "$MAILTO" <<EOD
 Dear admin,
-the following releases have been installed in CVMFS @ `hostname`
+the following items have been cleanup up in CVMFS @ `hostname`
 
 `cat $TRANSACTION`
 
@@ -137,7 +132,7 @@ else
         echo "Sending notification"
         mail -s "[ATLAS CVMFS ERROR] `hostname`" "$MAILTO" <<EOD
 Dear admin,
-the GroupData failed to install in CVMFS.
+the GroupData cleanup failed in CVMFS.
 Regards,
 
      Your faithful installation agent

@@ -1,0 +1,11 @@
+#!/bin/sh
+BQUEUES="`which bqueues 2>/dev/null`"
+if [ -z "$BQUEUES" -a -s "/etc/lsf/lsf.conf" ] ; then
+    . /etc/lsf/lsf.conf
+    export PATH=$LSF_BINDIR:$PATH
+fi
+
+which bqueues 2>&1
+bqueues 2>&1
+
+exit
