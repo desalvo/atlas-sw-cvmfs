@@ -21,10 +21,22 @@ fi
 
 TRANSACTION=/tmp/tmp.transaction.$$
 CURRDIR="$PWD"
-[ -z "$MAXFILES" ] && MAXFILES=500
+[ -z "$MAXFILES" ] && MAXFILES=100000
 
 rm -f ${TRANSACTION}*
 rc=0
+# Wait for the main lock
+if [ ! -f $TRANSACTION ] ; then
+    $HOME/bin/lock-install updateGroupData
+    rc=$?
+else
+    rc=0
+fi
+if [ $rc -ne 0 ]; then
+    exit $rc
+fi
+
+# Start the transactions
 echo "Preparing transfer"
 kinit -kt ${SVNUSERNAME}.keytab ${SVNUSERNAME}@CERN.CH
 [ -z "$GDPATHS" ] && GDPATHS="/afs/cern.ch/atlas/www/GROUPS/DATABASE/GroupData/:/cvmfs/atlas.cern.ch/repo/sw/database/GroupData"
@@ -34,34 +46,25 @@ for GDPATH in `echo $GDPATHS | sed 's/,/ /g'`; do
   GDDST="`echo $GDPATH | cut -d: -f 2`"
   let GDPINDX=$GDPINDX+1
   echo "Syncing GroupData [$GDPINDX] from $GDSRC to $GDDST"
-  rsync -nirl -e "ssh -l ${SVNUSERNAME} -i $HOME/.ssh/${SVNUSERNAME}_id_dsa -o GSSAPIDelegateCredentials=yes -o GSSAPIAuthentication=yes" $GDSRC $GDDST | \
-     egrep -v '^sending|^sent|^total|^cannot|^could not|^$' | egrep '^>|^c' | awk '{print $2}' | head -n $MAXFILES | grep -v -f ${GDEXCLLIST} | tee ${TRANSACTION}.flist
-  [ -n "$DEBUG" ] && cat ${TRANSACTION}.flist
-  if [ `cat ${TRANSACTION}.flist | wc -l` -gt 0 ] ; then
-      # Wait for the main lock
-      if [ ! -f $TRANSACTION ] ; then
-          $HOME/bin/lock-install updateGroupData
-          rc=$?
-      else
-          rc=0
-      fi
-      if [ $rc -ne 0 ]; then
-          exit $rc
-      fi
+  rsync -nirl -e "ssh -l ${SVNUSERNAME} -i $HOME/.ssh/${SVNUSERNAME}_id_dsa -o GSSAPIDelegateCredentials=yes -o GSSAPIAuthentication=yes -o StrictHostKeyChecking=no" $GDSRC $GDDST | \
+     egrep -v '^sending|^sent|^total|^cannot|^could not|^$' | egrep '^>|^c' | awk '{print $2}' | head -n $MAXFILES | grep -v -f ${GDEXCLLIST} | tee ${TRANSACTION}.${GDPINDX}.flist
+  [ -n "$DEBUG" ] && cat ${TRANSACTION}.${GDPINDX}.flist
+  if [ `cat ${TRANSACTION}.${GDPINDX}.flist | wc -l` -gt 0 ] ; then
       [ ! -f $TRANSACTION ] && eval $CVMFSTRANSACTION
-      echo "Synchronizing `cat ${TRANSACTION}.flist | wc -l` files"
-      rsync -dlptgov --delete --files-from=${TRANSACTION}.flist -e "ssh -l ${SVNUSERNAME} -i $HOME/.ssh/${SVNUSERNAME}_id_dsa -o GSSAPIDelegateCredentials=yes -o GSSAPIAuthentication=yes" $GDSRC $GDDST 2> ${TRANSACTION}.err
+      echo "Synchronizing `cat ${TRANSACTION}.${GDPINDX}.flist | wc -l` files"
+      #rsync -dlptgov --delete --files-from=${TRANSACTION}.${GDPINDX}.flist -e "ssh -l ${SVNUSERNAME} -i $HOME/.ssh/${SVNUSERNAME}_id_dsa -o GSSAPIDelegateCredentials=yes -o GSSAPIAuthentication=yes -o StrictHostKeyChecking=no" $GDSRC $GDDST 2> ${TRANSACTION}.${GDPINDX}.err
+      rsync -dlptgov --files-from=${TRANSACTION}.${GDPINDX}.flist -e "ssh -l ${SVNUSERNAME} -i $HOME/.ssh/${SVNUSERNAME}_id_dsa -o GSSAPIDelegateCredentials=yes -o GSSAPIAuthentication=yes -o StrictHostKeyChecking=no" $GDSRC $GDDST 2> ${TRANSACTION}.${GDPINDX}.err
       rc=$?
-      if [ $rc -eq 0 -a -s "${TRANSACTION}.flist" ] ; then
+      if [ $rc -eq 0 -a -s "${TRANSACTION}.${GDPINDX}.flist" ] ; then
           TSTAMP="`date +%Y%m%d%H%M`"
           echo "	* + GroupData $GDSRC $TSTAMP" >> $TRANSACTION
       else
-          cat ${TRANSACTION}.flist
-          cat ${TRANSACTION}.err
+          cat ${TRANSACTION}.${GDPINDX}.flist
+          cat ${TRANSACTION}.${GDPINDX}.err
       fi
   else
       echo "No files to synchronize from $GDSRC to $GDDST"
-      rm -f ${TRANSACTION}.flist
+      rm -f ${TRANSACTION}.${GDPINDX}.flist
   fi
 done
 
@@ -123,7 +126,7 @@ the following releases have been installed in CVMFS @ `hostname`
 
 `cat $TRANSACTION`
 
-Number of files transferred: `cat ${TRANSACTION}.flist | wc -l`
+Number of files transferred: `cat ${TRANSACTION}.*.flist | wc -l`
 
 Regards,
 
@@ -146,11 +149,11 @@ EOD
 fi
 
 if [ -s $TRANSACTION ] ; then
-    # Clear the install lock
-    $HOME/bin/unlock-install
-
     # Cleanup
     rm -f ${TRANSACTION}*
 fi
+
+# Clear the install lock
+$HOME/bin/unlock-install
 
 exit $rc

@@ -1,0 +1,184 @@
+#!/usr/bin/env python
+import tempfile, sys, os, time, commands, getopt
+try:
+    import json
+except:
+    import simplejson as json
+
+
+__version__ = "$Revision: 0.2.0$"[11:-1]
+
+__HELP__="""node-description interface v%s
+Usage: node-description [OPTION]
+
+Options:
+  --help                      display this help and exit.
+  --debug | -d                debug mode
+  --get | -g                  get the results from the node description ES rather than the cache
+  --index | -I <index>        use the <index> pattern to extract the data from ES (default: %s)
+  --interval | -i <interval>  get the results using a time span of <interval> (default: %s)
+  --os | -o <os-class>        select only <os-class> queues.
+  --server | -s <server>      query ES at <server> (default: %s)
+
+Alessandro De Salvo <Alessandro.DeSalvo@roma1.infn.it>.
+"""
+
+__DEFAULT_SERVER__   = 'http://atlas-es-prod.roma1.infn.it:9200'
+__DEFAULT_INDEX__    = 'nodedesc-*'
+__DEFAULT_INTERVAL__ = '2d'
+__CACHE_FILE__       = '/cvmfs/atlas.cern.ch/repo/sw/local/etc/nodedesc.csv'
+__CACHE_EXPIRY__     = '12h'
+
+__MAXATTEMPTS__      = 20
+__ES_SEARCH__        = "curl -s -XPOST %s/%s/_search?pretty -H 'Content-Type: application/json' -d@%s"
+__ES_QUERY__         = {
+                         "size": 0,
+                         "query": {
+                           "bool": {
+                             "filter": [
+                               {
+                                 "range": {
+                                   "@timestamp": {
+                                     "lte": "now/d"
+                                   }
+                                 }
+                               },
+                               {
+                                 "terms": {
+                                   "os_class.keyword": ["EL6","EL7"]
+                                 }
+                               }
+                             ]
+                           }
+                         },
+                         "aggs": {
+                           "panda_site": {
+                             "terms": {
+                               "field": "panda_site.keyword",
+                               "size": 100000
+                             },
+                             "aggs": {
+                               "panda_resource": {
+                                 "terms": {
+                                   "field": "panda_resource.keyword",
+                                   "size": 100000
+                                 },
+                                 "aggs": {
+                                   "os_class": {
+                                     "terms": {
+                                       "field": "os_class.keyword",
+                                       "size": 100000
+                                     }
+                                   }
+                                 }
+                               }
+                             }
+                           }
+                         }
+                       }
+
+class nodeDescription:
+  server  = None
+  debug   = False
+  osclass = []
+
+  def __init__(self, server):
+    self.server = server
+
+  def setDebug(self,val):
+    self.debug = val
+
+  def setOs(self,osclass):
+    for osc in osclass:
+      self.osclass.append(osc.upper())
+
+  def search(self, index, interval):
+    f = tempfile.NamedTemporaryFile(delete=False)
+    cmd = __ES_SEARCH__ % (self.server, index, f.name)
+    __ES_QUERY__["query"]["bool"]["filter"][0]["range"]["@timestamp"]["gt"] = "now-%s/d" % interval
+    f.write(json.dumps(__ES_QUERY__))
+    if (self.debug): print __ES_QUERY__
+    f.close()
+    for attempt in range(0,__MAXATTEMPTS__):
+      (s,o) = commands.getstatusoutput(cmd)
+      if (s == 0):
+        data = json.loads(o)
+        if (data.has_key('aggregations') and data['hits'] > 0):
+          resources = []
+          for ps in data['aggregations']['panda_site']['buckets']:
+            for pr in ps['panda_resource']['buckets']:
+              if (len(pr['os_class']['buckets']) > 0):
+                osclass_list = []
+                for osclass_val in pr['os_class']['buckets']: osclass_list.append(osclass_val['key'])
+                osclass_list.sort()
+                osclass = osclass_list[-1]
+              else:
+                osclass = "NONE"
+              if (not self.osclass or osclass in self.osclass): resources.append("%s,%s,%s" % (ps['key'],pr['key'],osclass))
+          resources.sort()
+          os.unlink(f.name)
+          return resources
+        else:
+          time.sleep(1)
+    os.unlink(f.name)
+    return None
+
+if __name__ == "__main__":
+  servers = [__DEFAULT_SERVER__]
+
+  short_options = "dghi:I:o:s:"
+  long_options = ["debug", "get", "help", "interval=", "index=", "os=", "server="]
+
+  debug=False
+  osclass=None
+  index=__DEFAULT_INDEX__
+  interval=__DEFAULT_INTERVAL__
+  mode='list'
+  server=__DEFAULT_SERVER__
+
+  try:
+    opts, args = getopt.getopt(sys.argv[1:],
+                 short_options,
+                 long_options,
+                 )
+  except getopt.GetoptError:
+    # Print the help
+    print __HELP__ % __version__
+    sys.exit(1)
+  for cmd, arg in opts:
+    if (cmd in ('--debug',) or cmd in ('-d',)):
+      debug=True
+    elif (cmd in ('--help',) or cmd in ('-h',)):
+      print __HELP__ % (__version__,__DEFAULT_INDEX__,__DEFAULT_INTERVAL__,__DEFAULT_SERVER__)
+      sys.exit(0)
+    elif (cmd in ('--get',) or cmd in ('-g',)):
+      mode='get'
+    elif (cmd in ('--index',) or cmd in ('-I',)):
+      index=arg
+    elif (cmd in ('--interval',) or cmd in ('-i',)):
+      interval=arg
+    elif (cmd in ('--os',) or cmd in ('-o',)):
+      osclass=arg
+    elif (cmd in ('--server',) or cmd in ('-s',)):
+      server=arg
+  nd = nodeDescription(server)
+  if (debug): nd.setDebug(True)
+  if (osclass): nd.setOs(osclass=osclass.split(','))
+  if (mode == 'list'):
+    try:
+      resfile = open(__CACHE_FILE__,'r')
+      for res in resfile:
+        line=res.replace('\n','')
+        (res_site,res_queue,res_osclass) = line.split(",")
+        if (not osclass or (osclass and res_osclass.lower() == osclass.lower())): print "%s,%s,%s" % (res_site,res_queue,res_osclass)
+      resfile.close()
+    except:
+      if (debug): raise
+      sys.exit(2)
+  else:
+    if (debug): print "Getting resources from node description ES"
+    resources = nd.search(index=index,interval=interval)
+    if (resources):
+      if (debug): print "%d resources found" % len(resources)
+      for res in resources:
+        print res

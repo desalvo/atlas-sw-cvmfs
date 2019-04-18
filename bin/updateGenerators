@@ -9,6 +9,7 @@
 DEST="/cvmfs/atlas.cern.ch/repo/sw/Generators"
 PDFDIR="lhapdfsets/current"
 MADGRAPHMODELSDIR="madgraph/models"
+MC16JOBOPTIONSDIR="madgraph/models"
 if [ -s "$INSTCONF" ] ; then
     DEST="`grep -i ^GeneratorsPath= $INSTCONF | cut -d= -f 2`"
     CHANGELOG="`grep -i ^ChangeLog= $INSTCONF | cut -d= -f 2`"
@@ -149,8 +150,13 @@ done
 #    fi
 #fi
 
-currrc=0
+# Get the SVNUSERNAME kerberos ticket
 kinit -kt ${SVNUSERNAME}.keytab ${SVNUSERNAME}@CERN.CH
+
+# New MadGraphModels
+# git based
+
+currrc=0
 MGSRC="https://:@gitlab.cern.ch:8443/atlas-generators-team/MadGraphModels.git"
 MGDST="$DEST/$MADGRAPHMODELSDIR/latest"
 echo "Syncing MadGraphModels from $MGSRC to $MGDST"
@@ -174,6 +180,49 @@ fi
 if [ $currrc -eq 0 ] ; then
     TSTAMP="`date +%Y%m%d%H%M`"
     echo "	* + MadGraphModels $TSTAMP" >> $TRANSACTION
+fi
+let rc=$rc+$currrc
+
+# New MC16JobOptions
+# git based
+
+currrc=0
+MCJOSRC="https://:@gitlab.cern.ch:8443/atlas-physics/pmg/mcjoboptions.git"
+MCJODST="$DEST/MC16JobOptions"
+echo "Syncing MC16JobOptions from $MCJOSRC to $MCJODST"
+if [ ! -d $MCJODST ] ; then
+    [ ! -d `dirname $MCJODST` ] && mkdir -p `dirname $MCJODST`
+    git clone $MCJOSRC $MCJODST
+    currrc=$?
+    [ $currrc -eq 0 ] && touch ${MCJODST}/.cvmfscatalog
+else
+    cd $MCJODST
+    git fetch
+    HEADREV=$(git rev-parse HEAD)
+    LOCALREV=$(git rev-parse @{u})
+    if [ $HEADREV != $LOCALREV ]; then
+        git ls-files --deleted | xargs -r git checkout --
+        git pull
+        currrc=$?
+    else
+        currrc=10
+    fi
+    cd -
+fi
+#
+# Recursively replace all files pointing to /eos
+#
+if [ $currrc -eq 0 ] ; then
+    find $MCJODST/* -type l -ilname "/eos/*" | while read l; do
+        lt="`readlink $l`"
+        echo "Copying $lt to $PWD/$l"
+        rm -f $l
+        scp atlcvmfs@lxplus.cern.ch:$lt $l
+    done
+fi
+if [ $currrc -eq 0 ] ; then
+    TSTAMP="`date +%Y%m%d%H%M`"
+    echo "	* + MC16JobOptions $TSTAMP" >> $TRANSACTION
 fi
 let rc=$rc+$currrc
 
