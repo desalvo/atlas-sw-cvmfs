@@ -16,6 +16,7 @@ if [ -s "$INSTCONF" ] ; then
     USERNAME="`grep -i ^UserName= $INSTCONF | cut -d= -f 2`"
     SVNUSERNAME="`grep -i ^SvnUserName= $INSTCONF | cut -d= -f 2`"
     JOLIST="`grep -i ^GeneratorsJobOptions= $INSTCONF | cut -d= -f 2`"
+    JOLIST_GIT="`grep -i ^GeneratorsJobOptions_git= $INSTCONF | cut -d= -f 2`"
     PDFSETS="`grep -i ^GeneratorsPDFSets= $INSTCONF | cut -d= -f 2`"
     CVMFSTRANSACTION="`grep -i ^cvmfs_transaction= $INSTCONF | cut -d= -f 2`"
     CVMFSABORT="`grep -i ^cvmfs_abort= $INSTCONF | cut -d= -f 2`"
@@ -183,48 +184,50 @@ if [ $currrc -eq 0 ] ; then
 fi
 let rc=$rc+$currrc
 
-# New MC16JobOptions
+# New MCJobOptions
 # git based
 
 currrc=0
-MCJOSRC="https://:@gitlab.cern.ch:8443/atlas-physics/pmg/mcjoboptions.git"
-MCJODST="$DEST/MC16JobOptions"
-echo "Syncing MC16JobOptions from $MCJOSRC to $MCJODST"
-if [ ! -d $MCJODST ] ; then
-    [ ! -d `dirname $MCJODST` ] && mkdir -p `dirname $MCJODST`
-    git clone $MCJOSRC $MCJODST
-    currrc=$?
-    [ $currrc -eq 0 ] && touch ${MCJODST}/.cvmfscatalog
-else
-    cd $MCJODST
-    git fetch
-    HEADREV=$(git rev-parse HEAD)
-    LOCALREV=$(git rev-parse @{u})
-    if [ $HEADREV != $LOCALREV ]; then
-        git ls-files --deleted | xargs -r git checkout --
-        git pull
+for JOPATH in `echo $JOLIST_GIT | sed 's/,/ /g'`; do
+    MCJOSRC="https://:@gitlab.cern.ch:8443`echo ${JOPATH} | cut -d: -f 1`"
+    MCJODST="`echo $JOPATH | cut -d: -f 2`"
+    echo "Syncing from $MCJOSRC to $MCJODST"
+    if [ ! -d $MCJODST ] ; then
+        [ ! -d `dirname $MCJODST` ] && mkdir -p `dirname $MCJODST`
+        git clone $MCJOSRC $MCJODST
         currrc=$?
+        [ $currrc -eq 0 ] && touch ${MCJODST}/.cvmfscatalog
     else
-        currrc=10
+        cd $MCJODST
+        git fetch
+        HEADREV=$(git rev-parse HEAD)
+        LOCALREV=$(git rev-parse @{u})
+        if [ $HEADREV != $LOCALREV ]; then
+            git ls-files --deleted | xargs -r git checkout --
+            git pull
+            currrc=$?
+        else
+            currrc=10
+        fi
+        cd -
     fi
-    cd -
-fi
-#
-# Recursively replace all files pointing to /eos
-#
-if [ $currrc -eq 0 ] ; then
-    find $MCJODST/* -type l -ilname "/eos/*" | while read l; do
-        lt="`readlink $l`"
-        echo "Copying $lt to $PWD/$l"
-        rm -f $l
-        scp atlcvmfs@lxplus.cern.ch:$lt $l
-    done
-fi
-if [ $currrc -eq 0 ] ; then
-    TSTAMP="`date +%Y%m%d%H%M`"
-    echo "	* + MC16JobOptions $TSTAMP" >> $TRANSACTION
-fi
-let rc=$rc+$currrc
+    #
+    # Recursively replace all files pointing to /eos
+    #
+    if [ $currrc -eq 0 ] ; then
+        find $MCJODST/* -type l -ilname "/eos/*" | while read l; do
+            lt="`readlink $l`"
+            echo "Copying $lt to $PWD/$l"
+            rm -f $l
+            scp atlcvmfs@lxplus.cern.ch:$lt $l
+        done
+    fi
+    if [ $currrc -eq 0 ] ; then
+        TSTAMP="`date +%Y%m%d%H%M`"
+        echo "	* + MC16JobOptions $TSTAMP" >> $TRANSACTION
+    fi
+    let rc=$rc+$currrc
+done
 
 # PDFSets
 # For this to work, since the synchronization is performed without afs tokens,
