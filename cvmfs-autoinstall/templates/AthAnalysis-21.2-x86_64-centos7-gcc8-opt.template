@@ -1,0 +1,17 @@
+reldef_name=@SWNAME@-centos7:@RELEASE@
+reldef_build=cmake
+reldef_typefk=16
+reldef_archfk=57
+reldef_sw_archfk=57
+reldef_default_validate_taskfk=94
+reldef_default_install_taskfk=95
+reldef_default_test_taskfk=96
+reldef_default_uninstall_taskfk=97
+reldef_default_cleanup_taskfk=98
+reldef_default_publish_tag_taskfk=99
+reldef_default_remove_tag_taskfk=100
+reldef_sw_name=@SWNAME@
+reldef_sw_physicalpath=\$VO_ATLAS_SW_DIR/prod/releases
+reldef_sw_logicalpath=\$VO_ATLAS_SW_DIR/software/21.2
+reldef_tag=VO-atlas-@SWNAME@-@RELEASE@-@CMTCONFIG@
+reldef_package=atlas-@SWNAME@-@RELEASE@-1-@CMTCONFIG@.tar.gz

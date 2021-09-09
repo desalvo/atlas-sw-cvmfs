@@ -17,6 +17,8 @@ if [ -s "$INSTCONF" ] ; then
     CVMFSABORT="`grep -i ^cvmfs_abort= $INSTCONF | cut -d= -f 2`"
     CVMFSPUBLISH="`grep -i ^cvmfs_publish= $INSTCONF | cut -d= -f 2`"
     MAILTO="`grep -i ^MailTo= $INSTCONF | cut -d= -f 2`"
+    MAILTOGD="`grep -i ^MailToGroupData= $INSTCONF | cut -d= -f 2`"
+    [ -n "$MAILTOGD" ] && MAILTOALARM="${MAILTO},${MAILTOGD}" || MAILTOALARM="${MAILTO}"
 fi
 
 TRANSACTION=/tmp/tmp.transaction.$$
@@ -136,14 +138,18 @@ EOD
     fi
 else
     [ -n "$CVMFSABORT" ] && $CVMFSABORT
-    if [ -n "$MAILTO" ] ; then
+    if [ -n "$MAILTOALARM" ] ; then
         echo "Sending notification"
-        mail -s "[ATLAS CVMFS ERROR] `hostname`" "$MAILTO" <<EOD
+        mail -s "[ATLAS CVMFS ERROR] `hostname`" "$MAILTOALARM" <<EOD
 Dear admin,
 the GroupData failed to install in CVMFS.
 Regards,
 
      Your faithful installation agent
+
+--- Log extract begin ---
+`cat ${TRANSACTION}.*.err`
+--- Log extract end ---
 EOD
     fi
 fi

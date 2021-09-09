@@ -1,6 +1,7 @@
 #Trial=yes
 VO_ATLAS_SW_DIR=/cvmfs/atlas.cern.ch/repo/sw
 AtlasSiteConfig=@VO_ATLAS_SW_DIR@/AtlasSiteConfig.sh
+AtlasInstallServer=atlas-install.roma1.infn.it
 PhysPath=@VO_ATLAS_SW_DIR@/software/@RELARCHDIR@/@RELMAIN@
 PhysPathCmake=@VO_ATLAS_SW_DIR@/software/@CMAKERELDIR@
 DefaultArch=i686-slc5-gcc43-opt
@@ -15,11 +16,13 @@ GeneratorsJobOptions_git=/atlas-physics/pmg/infrastructure/mc09joboptions.git:/c
 GeneratorsPDFSets=/afs/cern.ch/atlas/groups/Generators/lhapdfsets/current
 SimulationDataPath=/atlas-simulation-team/Geant4SetupConfigReference.git:/cvmfs/atlas.cern.ch/repo/sw/Simulation/Geant4SetupConfigReference
 PandaPilotPath=/PanDAWMS/pilot:/cvmfs/atlas.cern.ch/repo/sw/PandaPilot,/PanDAWMS/pilot2:/cvmfs/atlas.cern.ch/repo/sw/PandaPilot
+PandaPilotWrapperPath=/cvmfs/atlas.cern.ch/repo/sw/PandaPilotWrapper
 TzeroPatchesPath=/cvmfs/atlas.cern.ch/repo/sw/tzero/patches
 #PandaPilotPackage=pilot3
 PandaPilotArchive=tar
 #GroupDataPath=/afs/cern.ch/atlas/www/GROUPS/DATABASE/GroupData/:/cvmfs/atlas.cern.ch/repo/sw/database/GroupData,/eos/atlas/atlascerngroupdisk/perf-db/ftk/:/cvmfs/atlas.cern.ch/repo/sw/database/GroupData/FTK
-GroupDataPath=/eos/atlas/atlascerngroupdisk/asg-calib/:/cvmfs/atlas.cern.ch/repo/sw/database/GroupData,/eos/atlas/atlascerngroupdisk/perf-db/ftk/:/cvmfs/atlas.cern.ch/repo/sw/database/GroupData/FTK,/eos/atlas/atlascerngroupdisk/perf-muon/BFIELD_TEST_MAPS/:/cvmfs/atlas.cern.ch/repo/sw/database/GroupData/MuonBFieldMaps
+#GroupDataPath=/eos/atlas/atlascerngroupdisk/asg-calib/:/cvmfs/atlas.cern.ch/repo/sw/database/GroupData,/eos/atlas/atlascerngroupdisk/perf-db/ftk/:/cvmfs/atlas.cern.ch/repo/sw/database/GroupData/FTK,/eos/atlas/atlascerngroupdisk/perf-muon/BFIELD_TEST_MAPS/:/cvmfs/atlas.cern.ch/repo/sw/database/GroupData/MuonBFieldMaps
+GroupDataPath=/eos/atlas/atlascerngroupdisk/asg-calib/:/cvmfs/atlas.cern.ch/repo/sw/database/GroupData,/eos/atlas/atlascerngroupdisk/perf-muon/BFIELD_TEST_MAPS/:/cvmfs/atlas.cern.ch/repo/sw/database/GroupData/MuonBFieldMaps
 GroupDataCleanupPath=/afs/cern.ch/atlas/www/GROUPS/DATABASE/GroupData/dev/:/cvmfs/atlas.cern.ch/repo/sw/database/GroupData/dev
 BOINCPath=/cvmfs/atlas.cern.ch/repo/sw/BOINC
 AGISDataPath=/cvmfs/atlas.cern.ch/repo/sw/local/etc
@@ -31,6 +34,14 @@ AGISDDMblacklistingURL=http://atlas-agis-api.cern.ch/request/ddmendpointstatus/q
 AGISOSServicesURL=http://atlas-agis-api.cern.ch/request/service/query/get_os_services/?json
 #AGISToAURL=http://atlas-agis-api.cern.ch/ToACache/TiersOfATLASCache.py
 AGISToAURL=http://atlas-agis-api.cern.ch/request/toacache/TiersOfATLASCache.py
+AGISTagsURL=http://atlas-agis-api.cern.ch/request/pandaqueue/query/list/?json&preset=tags&json_pretty=False
+CRICDataPath=/cvmfs/atlas.cern.ch/repo/sw/local/etc
+CRICPandaQueuesURL=https://atlas-cric.cern.ch/api/atlas/pandaqueue/query/?json&json_pretty=0
+CRICSitesURL=https://atlas-cric.cern.ch/api/atlas/site/query/?json&json_pretty=0
+CRICDDMendpointURL=https://atlas-cric.cern.ch/api/atlas/ddmendpoint/query/?json&json_pretty=0
+CRICTagsURL=https://atlas-cric.cern.ch/api/atlas/pandaqueue/query/?json&preset=tags&json_pretty=0
+#CRICDDMblacklistingURL=https://atlas-cric.cern.ch/api/atlas/ddmendpointstatus/query/?json&json_pretty=0
+CRICDDMblacklistingURL=https://atlas-cric.cern.ch/cache/ddmendpointstatuses.json
 NodeDescriptionPath=/cvmfs/atlas.cern.ch/repo/sw/local/etc
 cvmfs_transaction=cvmfs_server transaction atlas.cern.ch
 cvmfs_abort=cvmfs_server abort -f atlas.cern.ch

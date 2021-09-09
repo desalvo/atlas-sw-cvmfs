@@ -1,5 +1,6 @@
 #!/bin/sh
-MAINLOCK=$HOME/.install.lock
+#MAINLOCK=$HOME/.install.lock
+MAINLOCK=/var/tmp/.install.lock
 MAINLOCKOPTS="-60 -r 180"
 [ -n "$1" ] && LOCKOWNER="$1" || LOCKOWNER="manual_run"
 

@@ -1,0 +1,38 @@
+#!/bin/sh
+
+SWNAME=$1
+RELEASE=$2
+INSTPATH=$3
+rc=0
+
+# Configuration scripts
+[ -f "$PWD/.arelinstrc" ] && INSTCONF="$PWD/.arelinstrc"
+[ -f "$HOME/.arelinstrc" ] && INSTCONF="$HOME/.arelinstrc"
+
+if [ -s "$INSTCONF" ] ; then
+    CVMFSTRANSACTION="`grep -i ^cvmfs_transaction= $INSTCONF | cut -d= -f 2`"
+    CVMFSABORT="`grep -i ^cvmfs_abort= $INSTCONF | cut -d= -f 2`"
+    CVMFSPUBLISH="`grep -i ^cvmfs_publish= $INSTCONF | cut -d= -f 2`"
+fi
+
+echo "Checking for TDAQ fixes"
+if [ -d "${INSTPATH}/dqm-common" -o -d "${INSTPATH}/tdaq-common" -o -d "${INSTPATH}/tdaq" ] ; then
+    echo "Fixing TDAQ"
+    # Wait for the main lock
+    $HOME/bin/lock-install fixTDAQRelease
+    rc=$?
+    if [ $rc -ne 0 ]; then
+      exit $rc
+    fi
+    echo "Starting the tdaq fixes"
+    $CVMFSTRANSACTION
+    rm -fr ${INSTPATH}/dqm-common ${INSTPATH}/dqm-common ${INSTPATH}/tdaq-common
+    rc=$?
+    if [ $rc -eq 0 ] ; then
+        $CVMFSPUBLISH
+    else
+        [ -n "$CVMFSABORT" ] && $CVMFSABORT
+    fi
+fi
+
+exit $rc

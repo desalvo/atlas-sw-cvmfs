@@ -63,10 +63,16 @@ fi
 
 rc=0
 echo "Building image from docker://${DOCKER_IMAGE}"
-echo "sudo singularity build --writable ${TMPDIR}/${OUTIMG}.img.0 docker://${DOCKER_IMAGE}"
-sudo SINGULARITY_CACHEDIR=$SINGULARITY_CACHEDIR singularity build --writable ${TMPDIR}/${OUTIMG}.img.0 docker://${DOCKER_IMAGE}
+#echo "sudo singularity build --writable ${TMPDIR}/${OUTIMG}.img.0 docker://${DOCKER_IMAGE}"
+#sudo SINGULARITY_CACHEDIR=$SINGULARITY_CACHEDIR singularity build --writable ${TMPDIR}/${OUTIMG}.img.0 docker://${DOCKER_IMAGE}
+echo "sudo singularity build --sandbox ${TMPDIR}/${OUTIMG}.img.0 docker://${DOCKER_IMAGE}"
+sudo SINGULARITY_CACHEDIR=$SINGULARITY_CACHEDIR singularity build --sandbox ${TMPDIR}/${OUTIMG}.img.0 docker://${DOCKER_IMAGE}
 cmdrc=$?
-[ -f ${TMPDIR}/${OUTIMG}.img.0 ] && sudo chown cvatlas.cvatlas ${TMPDIR}/${OUTIMG}.img.0
+#[ -f ${TMPDIR}/${OUTIMG}.img.0 ] && sudo chown cvatlas.cvatlas ${TMPDIR}/${OUTIMG}.img.0
+if [ -d ${TMPDIR}/${OUTIMG}.img.0 ] ; then
+  sudo chown -R cvatlas.cvatlas ${TMPDIR}/${OUTIMG}.img.0
+  find ${TMPDIR}/${OUTIMG}.img.0 -type d -exec chmod u+w {} \;
+fi
 if [ $cmdrc -eq 0 ] ; then
   echo "Stripping image"
   sudo SINGULARITY_CACHEDIR=$SINGULARITY_CACHEDIR singularity exec --writable -C ${TMPDIR}/${OUTIMG}.img.0 rm -fr /var/lib/yum /var/cache/yum /usr/share/doc /boot

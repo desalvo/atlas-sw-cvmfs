@@ -1,6 +1,6 @@
 #!/bin/bash
 
-VERSION="sw-mgr v0.253.1 - 20190418"
+VERSION="sw-mgr v0.256.1 - 20210415"
 help() {
     cat <<EOD
 Usage: `basename $0` [OPTION]
@@ -114,6 +114,7 @@ Usage: `basename $0` [OPTION]
    --project-opt <option>|-O          Use optimization <option>
                                       <option> = opt -> optimized mode
                                       <option> = dbg -> debug mode
+   --server <ai_server>               Use <ai_server> AtlasInstall DB
    --site-config <path>               Use <path> to store the site configuration
    --site-type <type>                 Specify the site type (analysis, production, ...)
    --snap|-s <release number>         Create a snapshot for the selected release
@@ -1808,6 +1809,7 @@ install() {
             $AYUM_DIR/ayum -y install ${AYUM_REL}
             [ -z "$IGNORE_INSTALL_ERRORS" ] && let instrc=$instrc+$?
             $AYUM_DIR/ayum clean all
+            SKIPSETPERM="yes"
         else
             if [ "$PACMAN_OPTS" != "" -a "$USEPACBALL" != "yes" ] ; then
                 msgOut INFO "pacman $PACMAN_OPTS"
@@ -2831,12 +2833,12 @@ EOSR
             ;;
     esac
     [ "$CHMOD_OPTS" != "" ] && CHMOD_OPTS="o-w,a+X,$CHMOD_OPTS" || CHMOD_OPTS="o-w,a+X"
-    if [ $SKIPPHYSINST -eq 0 ] ; then
+    if [ $SKIPPHYSINST -eq 0 -a -z $SKIPSETPERM ] ; then
         msgOut INFO "Setting permissions in ${SWPHYS} to $CHMOD_OPTS"
         find ${SWPHYS} -user `whoami` ! -type l ! -perm -$CHMOD_OPTS -exec chmod $CHMOD_OPTS "{}" \; -exec ls -ld "{}" \;
         [ $? -ne 0 ] && msgOut ERROR "Cannot change permissions in ${SWPHYS}"
     fi
-    if [ $SKIPLOGINST -eq 0 ] ; then
+    if [ $SKIPLOGINST -eq 0 -a -z $SKIPSETPERM ] ; then
         if [ "$SWLOC" != "${RELLOC}" ] ; then
             msgOut INFO "Setting permissions in ${SWLOG} to $CHMOD_OPTS"
             find ${SWLOG} -user `whoami` ! -type l ! -perm -$CHMOD_OPTS -exec chmod $CHMOD_OPTS "{}" \; -exec ls -ld "{}" \;
@@ -5136,6 +5138,36 @@ prefix=${RELLOC}/sw/lcg/releases
 enabled=1
 EOF
 
+    cat - >./etc/yum.repos.d/lcg-updates.repo <<EOF
+[lcg-updates-repo]
+name=LCG Updates Repository
+baseurl=http://lcgpackages.web.cern.ch/lcgpackages/rpms_updates
+prefix=${RELLOC}/sw/lcg/releases
+enabled=1
+EOF
+
+    cat - >./etc/yum.repos.d/lcg97.repo <<EOF
+[lcg-97-repo]
+name=LCG 97 Repository
+baseurl=http://cern.ch/lcgpackages/lcg/repo/7/LCG_97
+prefix=${RELLOC}/sw/lcg/releases
+enabled=1
+EOF
+
+    cat - >./etc/yum.repos.d/lcg98.repo <<EOF
+[lcg-98-repo]
+name=LCG 98 Repository
+baseurl=http://cern.ch/lcgpackages/lcg/repo/7/LCG_98
+prefix=${RELLOC}/sw/lcg/releases
+enabled=1
+EOF
+    cat - >./etc/yum.repos.d/lcg100.repo <<EOF
+[lcg-100-repo]
+name=LCG 100 Repository
+baseurl=http://cern.ch/lcgpackages/lcg/repo/7/LCG_100
+prefix=${RELLOC}/sw/lcg/releases
+enabled=1
+EOF
     cat - >./etc/yum.repos.d/lcg-contrib.repo <<EOF
 [lcg-contrib]
 name=LCG Contrib
@@ -5183,6 +5215,57 @@ enabled=1
 name=ATLAS offline releases CC7
 baseurl=http://cern.ch/atlas-software-dist-eos/RPMs/releases/cc7
 enabled=0
+
+[atlas-offline-releases-centos7]
+name=ATLAS offline releases CentOS7
+baseurl=http://cern.ch/atlas-software-dist-eos/RPMs/releases/centos7
+enabled=1
+
+[atlas-release-22.6]
+name=ATLAS release 22.6
+baseurl=http://cern.ch/atlas-software-dist-eos/RPMs/releases/22.6
+enabled=1
+
+[atlas-release-22.2]
+name=ATLAS release 22.2
+baseurl=http://cern.ch/atlas-software-dist-eos/RPMs/releases/22.2
+enabled=1
+
+[atlas-release-22.0]
+name=ATLAS release 22.0
+baseurl=http://cern.ch/atlas-software-dist-eos/RPMs/releases/22.0
+enabled=1
+#prefix=/cvmfs/atlas.cern.ch/repo/sw/software/22.0
+
+[atlas-release-21.0]
+name=ATLAS release 21.0
+baseurl=http://cern.ch/atlas-software-dist-eos/RPMs/releases/21.0
+enabled=1
+
+#[atlas-release-21.1]
+#name=ATLAS release 21.1
+#baseurl=http://cern.ch/atlas-software-dist-eos/RPMs/releases/21.1
+#enabled=1
+
+[atlas-release-21.2]
+name=ATLAS release 21.2
+baseurl=http://cern.ch/atlas-software-dist-eos/RPMs/releases/21.2
+enabled=1
+
+[atlas-release-21.3]
+name=ATLAS release 21.3
+baseurl=http://cern.ch/atlas-software-dist-eos/RPMs/releases/21.3
+enabled=1
+
+[atlas-release-21.6]
+name=ATLAS release 21.6
+baseurl=http://cern.ch/atlas-software-dist-eos/RPMs/releases/21.6
+enabled=1
+
+[atlas-release-21.9]
+name=ATLAS release 21.9
+baseurl=http://cern.ch/atlas-software-dist-eos/RPMs/releases/21.9
+enabled=1
 EOF
 
     # Setup environment to run the ayum command:
@@ -5195,6 +5278,7 @@ EOF
     else
         msgOut ERROR "Unable to setup ayum."
     fi
+    #rm -f ./etc/yum.repos.d/tdaq*
     # Go back to the startup directory
     cd $CURDIR
     return $setuprc
@@ -5206,7 +5290,7 @@ autoconfig() {
     if [ -n "$AUTOCONF" ] ; then
         AUTOCONF_TMP="/tmp/sw-mgr.$$.autoconf"
         rm -f $AUTOCONF_TMP
-        ACURL="https://atlas-install.roma1.infn.it/atlas_install/info/showrel.php"
+        ACURL="https://${AISERVER}/atlas_install/info/showrel.php"
         msgOut INFO "Autoconfiguring release $AUTOCONF from $ACURL"
         RELINFO="`echo ${AUTOCONF} | sed -e 's/\([^_]\)_\(.*\)\(_i686_slc[0-9]*_gcc[0-9]*\)_\(.*\)/\1 \2 \3/' -e 's/\([^_]\)_\(.*\)\(_x86_64_slc[0-9]*_gcc[0-9]*\)_\(.*\)/\1 \2 \3/'`"
         if [ "$RELINFO" == "${AUTOCONF}" ] ; then
@@ -5320,8 +5404,6 @@ TESTTHR="1"
 USEPACBALL="no"
 DEBUG="no"
 POSTSITEINFO="no"
-POSTSITEURL="https://atlas-install.roma1.infn.it/atlas_install/exec/updinfo.php"
-POSTRELURL="https://atlas-install.roma1.infn.it/atlas_install/exec/relstat.php"
 GRIDNAME="EGEE"
 TAGFILE=""
 TAGMODE="grid"
@@ -5337,8 +5419,12 @@ ATLASSETUPPATCHURL="http://classis01.roma1.infn.it/pacman/packages/AtlasSetup/pa
 DQ2SETUPURL="http://classis01.roma1.infn.it/pacman/packages/DQ2Setup"
 PCMODE="all"
 MAXRELSETUPDEPTH=5
+AISERVER="atlas-install.roma1.infn.it"
+# Preset these, might be reset by CLI options
+POSTSITEURL="https://${AISERVER}/atlas_install/exec/updinfo.php"
+POSTRELURL="https://${AISERVER}/atlas_install/exec/relstat.php"
 
-OPTS=`getopt -o a:d:D:fgG:H:i:k:l:Lm:M:oO:p:P:Qr:R:s:St:T:x:w:hcCfnNquv:V -l add-tags,autoconf:,cache,check,cleanup,clean-links,compiler-home:,cvmfs-install,debug,dest:,dbarea:,dbrelease:,dbrelease-cache:,dbrelease-clean,ddm-setup:,ddm-site:,ddm-verify,dir:,disk-free:,dump-tags:,extra-tag:,extra-pkg:,force-tags,goc-name:,grid-name:,kv-conf:,kv-disable:,kv-enable:,kv-keep,kv-no-auto,kvpath:,kvpost-tag:,grid-cache,host:,ignore-install-errs,install:,install-compiler,kit-cache:,kv-cache:,kvpost,local-config:,logical:,logical-link:,manage:,min-install-size:,no-opt,no-tag,no-compat-patch,no-new-pacball,override-lock,package:,pacman-ver:,pretend-platform:,physical:,physical-link:,post-siteinfo,post-siteurl:,postinstall,project:,project-opt:,project-type:,quiet,restore-backup,reinstall,reinstall-clean,relative-links,release-only,release-name:,release-path:,pacball,pacball-dataset:,pacball-repo:,poolcond-copy,poolcond-mode:,poolcond-scandir,poolcond-topdir:,poolcond-pattern:,release-setup:,release-setup-level:,release-ver:,replicate,remove:,remove-snap:,remove-tags,rm-tags-on-fail,require-compiler,require-shfs,require-prj:,setenv:,set-frontier,setup-latest:,site-config:,site-type:,skip-local-config,snap:,snapdir:,snapname:,subcluster:,tag-file:,tag-mode:,tag-utility:,tags:,target:,temp-cache,test:,tthreads:,update,use-grid,vo:,validate,validation-exe:,xml:,create-dvd,write-dvd:,help,force,no-cache,no-version,query,stagein:,lfc-check,lfcHost:,inputGUIDs:,oldPrefix:,newPrefix: -- "$@"` 
+OPTS=`getopt -o a:d:D:fgG:H:i:k:l:Lm:M:oO:p:P:Qr:R:s:St:T:x:w:hcCfnNquv:V -l add-tags,autoconf:,cache,check,cleanup,clean-links,compiler-home:,cvmfs-install,debug,dest:,dbarea:,dbrelease:,dbrelease-cache:,dbrelease-clean,ddm-setup:,ddm-site:,ddm-verify,dir:,disk-free:,dump-tags:,extra-tag:,extra-pkg:,force-tags,goc-name:,grid-name:,kv-conf:,kv-disable:,kv-enable:,kv-keep,kv-no-auto,kvpath:,kvpost-tag:,grid-cache,host:,ignore-install-errs,install:,install-compiler,kit-cache:,kv-cache:,kvpost,local-config:,logical:,logical-link:,manage:,min-install-size:,no-opt,no-tag,no-compat-patch,no-new-pacball,override-lock,package:,pacman-ver:,pretend-platform:,physical:,physical-link:,post-siteinfo,post-siteurl:,postinstall,project:,project-opt:,project-type:,quiet,restore-backup,reinstall,reinstall-clean,relative-links,release-only,release-name:,release-path:,pacball,pacball-dataset:,pacball-repo:,poolcond-copy,poolcond-mode:,poolcond-scandir,poolcond-topdir:,poolcond-pattern:,release-setup:,release-setup-level:,release-ver:,replicate,remove:,remove-snap:,remove-tags,rm-tags-on-fail,require-compiler,require-shfs,require-prj:,server:,setenv:,set-frontier,setup-latest:,site-config:,site-type:,skip-local-config,snap:,snapdir:,snapname:,subcluster:,tag-file:,tag-mode:,tag-utility:,tags:,target:,temp-cache,test:,tthreads:,update,use-grid,vo:,validate,validation-exe:,xml:,create-dvd,write-dvd:,help,force,no-cache,no-version,query,stagein:,lfc-check,lfcHost:,inputGUIDs:,oldPrefix:,newPrefix: -- "$@"` 
 if [ $? != 0 ] ; then
     echo "[ARGUMENTS] $@"
     echo "Terminating..."
@@ -5445,6 +5531,7 @@ while true ; do
         --rm-tags-on-fail)     RMTAGONFAIL="yes";shift;;
         --replicate)           GRIDREPLICA="yes";shift;;
         --require-shfs|-S)     REQSHAREDFS="yes";shift;;
+        --server)              AISERVER="$2";shift 2;;
         --setenv)              SETENV="$2";shift 2;;
         --set-frontier)        SETFRONTIER="y";shift;;
         --setup-latest)        PRESETUP="$2";shift 2;;
@@ -5478,6 +5565,8 @@ done
 
 # Complete the configuration
 export T_POST
+POSTSITEURL="https://${AISERVER}/atlas_install/exec/updinfo.php"
+POSTRELURL="https://${AISERVER}/atlas_install/exec/relstat.php"
 CATALOG_PATH="/grid/$TAGVO/install/lcg"
 PRJTAGNAME="`echo $PRJNAME | sed 's#^Atlas##g' | tr [A-Z] [a-z]`"
 PACMAN_OPTS="$PACMAN_OPTS -trust-all-caches -allow tar-overwrite -allow unsupported-platforms"

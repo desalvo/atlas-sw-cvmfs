@@ -1,5 +1,6 @@
 #!/bin/sh
-MAINLOCK=$HOME/.install.lock
+#MAINLOCK=$HOME/.install.lock
+MAINLOCK=/var/tmp/.install.lock
 
 # Wait for the main lock
 echo "Unlocking install"

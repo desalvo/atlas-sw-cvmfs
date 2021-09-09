@@ -1,0 +1,7 @@
+#!/bin/sh
+
+SWNAME=$1
+RELEASE=$2
+INSTPATH=$3
+
+[ -d "${INSTPATH}/${SWNAME}/${RELEASE}" ] && exit 0 || exit 2

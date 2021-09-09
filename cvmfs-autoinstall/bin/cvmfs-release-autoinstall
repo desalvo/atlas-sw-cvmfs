@@ -1,0 +1,234 @@
+#!/bin/sh
+
+VERSION="`basename $0` v1.0 - 20210415"
+help() {
+    cat <<EOD
+Usage: `basename $0` [OPTION]
+   OPTIONS
+   -------
+   --debug|-d                         Print debug messages
+   --help|-h                          Display this help
+   --cmtconfig|-c <cmtconfig>         CMTCONFIG for this release installation,
+                                      e.g. x86_64-centos7-gcc8-opt
+   --force|-f                         Force installation/removal
+   --name|-n <sw name>                Software name to be installed,
+                                      e.g. Athena
+   --rebuilddb|-R                     Rebuild the rpmdb prior to installation
+   --release|-r <release number>      Release number to be installed,
+                                      e.g. 22.0.1
+   --server|-s  <ai_server>           AtlasInstall server
+
+$VERSION
+Alessandro De Salvo <Alessandro.DeSalvo@roma1.infn.it>
+EOD
+}
+
+# Global defaults
+AISERVER="atlas-install.roma1.infn.it"
+
+# Configuration scripts
+[ -f "$PWD/.arelinstrc" ] && INSTCONF="$PWD/.arelinstrc"
+[ -f "$HOME/.arelinstrc" ] && INSTCONF="$HOME/.arelinstrc"
+
+if [ -s "$INSTCONF" ] ; then
+    AISERVER="`grep -i ^AtlasInstallServer= $INSTCONF | cut -d= -f 2`"
+    MAILTO="`grep -i ^MailTo= $INSTCONF | cut -d= -f 2`"
+fi
+
+OPTS=`getopt -o c:dfhn:Rr:s: -l cmtconfig:,debug,force,help,name:,rebuilddb,release:,server: -- "$@"`
+if [ $? != 0 ] ; then echo "Terminating..."; exit -1 ; fi
+eval set -- "$OPTS"
+
+while true ; do
+    case "$1" in
+        --cmtconfig|-c)        CMTCONFIG="$2";shift 2;;
+        --debug|-d)            DEBUG=1;shift;;
+        --force|-f)            FORCE=1;shift;;
+        --help|-h)             help;exit;;
+        --name|-n)             SWNAME="$2";shift 2;;
+        --rebuilddb|-R)        REBUILDDB="--rebuilddb";shift;;
+        --release|-r)          RELEASE="$2";shift 2;;
+        --server|-s)           AISERVER="$2";shift 2;;
+        --)                    shift;break;;
+        \?)                    break;
+        exit;;
+    esac
+done
+
+rc=0
+HSNAME=`hostname -f`
+if [ -s $HOME/cvmfs-autoinstall/private/proxy ] ; then
+    X509_USER_CERT=$HOME/cvmfs-autoinstall/private/proxy
+    X509_USER_KEY=$HOME/cvmfs-autoinstall/private/proxy
+elif [ -s /etc/pki/tls/certs/${HSNAME}.pem -a -s /etc/pki/tls/private/${HSNAME}.key ] ; then
+    X509_USER_CERT=/etc/pki/tls/certs/lxcvmfs130.cern.ch.pem
+    X509_USER_KEY=/etc/pki/tls/private/lxcvmfs130.cern.ch.key
+else
+    echo "No certificate or proxy available"
+    exit 1
+fi
+
+TMPRELDEF=/tmp/reldef.$$
+TMPRELCURLDEFOPTS=/tmp/relcurldefopts.$$
+TMPCURLOUT=/tmp/tmpcurlout.$$
+if [ -z "$SWNAME" -o -z "$RELEASE" -o -z "$CMTCONFIG" ] ; then
+    echo "ERROR: no software name, release number or cmtconfig specified"
+    echo
+    help
+    exit 1
+fi
+MAJREL="`echo $RELEASE | cut -d. -f 1-2`"
+TEMPLATE=${SWNAME}-${MAJREL}-${CMTCONFIG}.template
+OPTIONS=${SWNAME}-${MAJREL}-${CMTCONFIG}.options
+POSTINSTALL=${SWNAME}-${MAJREL}-${CMTCONFIG}.postinstall
+TESTNAME=${SWNAME}-${MAJREL}-${CMTCONFIG}
+[ -n "$FORCE" ] && FORCE_OPT="--force"
+if [ ! -s $HOME/cvmfs-autoinstall/templates/$TEMPLATE ] ; then
+    echo "No template $TEMPLATE found in $HOME/cvmfs-autoinstall/templates"
+    if [ -n "$MAILTO" ] ; then
+        mail -s "[ATLAS CVMFS AUTOINSTALL ERROR] `hostname`" "$MAILTO" <<EOD
+Dear admin,
+the following template is missing from the configuration and has been requested from CVMFS @ `hostname`
+  
+$TEMPLATE
+  
+Regards,
+    
+     Your faithful auto-installation agent
+EOD
+    fi
+    exit 1
+fi
+NOW="`date +"%Y-%m-%d %H:%M:%S"`"
+
+cat <<EOD >> $TMPRELDEF
+mode=define
+relsrc=new
+submit=Save
+reldef_userfk=2215
+EOD
+
+sed -e "s/@SWNAME@/$SWNAME/g" -e "s/@RELEASE@/$RELEASE/g" -e "s/@CMTCONFIG@/$CMTCONFIG/g" $HOME/cvmfs-autoinstall/templates/${TEMPLATE} >> $TMPRELDEF
+
+cat <<EOD >> $TMPRELDEF
+reldef_obsolete=0
+reldef_autoinstall=0
+reldef_installer_version=-
+reldef_install_tools_version=-
+reldef_sw_revision=1
+reldef_pacman_version=3.29
+reldef_pacman_platform=auto
+reldef_sw_versionarea=none
+reldef_sw_atlas_fix_64=no
+reldef_sw_atlas_compiler=no
+reldef_sw_diskspace=11245000:20000:2500000
+reldef_kvpost=yes
+reldef_date=$NOW
+reldef_cvmfs_available=0
+reldef_critical=0
+reldef_critical_site_typefk=1
+reldef_critical_userfk=2215
+reldef_critical_validity_from=$NOW
+reldef_critical_date=$NOW
+EOD
+
+RELNAME="`grep ^reldef_name $TMPRELDEF | cut -d= -f 2-`"
+if [ -z "$RELNAME" ] ; then
+    echo "Cannot determine the release name"
+    if [ -n "$MAILTO" ] ; then
+        mail -s "[ATLAS CVMFS AUTOINSTALL ERROR] `hostname`" "$MAILTO" <<EOD
+Dear admin,
+cannot determine the release name from $SWNAME $RELEASE $CMTCONFIG on CVMFS @ `hostname`
+Regards,
+    
+     Your faithful auto-installation agent
+EOD
+    fi
+    exit 2
+fi
+RELINFO="`curl -s -k https://${AISERVER}/atlas_install/exec/rellist.php?rel=${RELNAME}`"
+[ -n "$RELINFO" ] && ISDEFINED=1 || ISDEFINED=0
+
+if [ $ISDEFINED -eq 0 ] ; then
+    echo "Defining release $RELNAME"
+    [ -s $TMPRELCURLDEFOPTS ] && rm -f $TMPRELCURLDEFOPTS
+    cat $TMPRELDEF | while read field; do
+        echo "-F '$field'" >> $TMPRELCURLDEFOPTS
+    done
+    #eval curl -s --capath /etc/grid-security/certificates \
+    #             --cacert $X509_USER_PROXY --cert $X509_USER_PROXY \
+    eval curl -sk --cert $X509_USER_CERT --key $X509_USER_KEY \
+                 -XPOST "https://${AISERVER}/atlas_install/protected/reldef.php" \
+                 `cat $TMPRELCURLDEFOPTS` > $TMPCURLOUT
+    if [ -n "`grep 'Release definition completed successfully' $TMPCURLOUT 2>/dev/null`" ] ; then
+        echo "Release definition successful"
+        ISDEFINED=1
+    else
+        echo "Release definition failed"
+        cat $TMPCURLOUT
+    fi
+    rm -f $TMPRELCURLDEFOPTS $TMPCURLOUT
+else
+    echo "Release $RELNAME is already defined"
+fi
+
+if [ $ISDEFINED -eq 1 ] ; then
+    echo  $HOME/cvmfs-autoinstall/options/$OPTIONS 
+    [ -s  $HOME/cvmfs-autoinstall/options/$OPTIONS ] && INSTALL_OPTS="`cat $HOME/cvmfs-autoinstall/options/$OPTIONS`"
+    if [ -n "`which updateAtlasReleases 2>/dev/null`" ] ; then
+        echo "Installing $RELNAME [Options: $INSTALL_OPTS]"
+        updateAtlasReleases --rel=$RELNAME --server=$AISERVER $INSTALL_OPTS $FORCE_OPT $REBUILDDB
+        rc=$?
+        if [ $rc -eq 0 ] ; then
+            [ -z "$VO_ATLAS_SW_DIR" ] && VO_ATLAS_SW_DIR="/cvmfs/atlas.cern.ch/repo/sw"
+            INSTPATH="`grep ^reldef_sw_logicalpath= $TMPRELDEF | cut -d= -f 2- | sed -e 's/^\\\//' -e "s#\\$VO_ATLAS_SW_DIR#$VO_ATLAS_SW_DIR#g"`"
+            echo $INSTPATH
+            if [ -s $HOME/cvmfs-autoinstall/tests/$TESTNAME ] ; then
+                $HOME/cvmfs-autoinstall/tests/$TESTNAME $SWNAME $RELEASE $INSTPATH
+                rc=$?
+            elif [ -s $HOME/cvmfs-autoinstall/tests/default ] ; then
+                $HOME/cvmfs-autoinstall/tests/default $SWNAME $RELEASE $INSTPATH
+                rc=$?
+            fi
+            if [ -s $HOME/cvmfs-autoinstall/postinstall/$POSTINSTALL ] ; then
+                $HOME/cvmfs-autoinstall/postinstall/$POSTINSTALL
+                let rc=$rc+$?
+            fi
+        fi
+        [ $rc -eq 0 ] && echo "Release $RELNAME installed successfully" || echo "Testing release $RELNAME installation failed"
+    else
+        echo "No release installation tool found"
+        rc=10
+    fi
+fi
+
+# Clean up
+rm -f $TMPRELDEF
+if [ $rc -eq 0 ] ; then
+    if [ -n "$MAILTO" ] ; then
+        mail -s "[ATLAS CVMFS AUTOINSTALL DONE] `hostname`" "$MAILTO" <<EOD
+Dear admin,
+the following release has been successfully install in CVMFS from `hostname`
+
+$SWNAME $RELEASE $CMTCONFIG
+
+Regards,
+    
+     Your faithful auto-installation agent
+EOD
+    fi
+else
+    if [ -n "$MAILTO" ] ; then
+        mail -s "[ATLAS CVMFS AUTOINSTALL ERROR] `hostname`" "$MAILTO" <<EOD
+Dear admin,
+the following release failed to install in CVMFS from `hostname`
+
+$SWNAME $RELEASE $CMTCONFIG
+
+Regards,
+    
+     Your faithful auto-installation agent
+EOD
+    fi
+fi
+exit $rc

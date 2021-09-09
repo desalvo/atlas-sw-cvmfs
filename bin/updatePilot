@@ -42,6 +42,33 @@ for PPPATH in `echo $PPPATHS | sed 's/,/ /g'`; do
         git clone https://github.com/$PPSRC $DEST/$PILOTPKG/latest
         currrc=$?
         if [ $currrc -eq 0 ] ; then
+            if [ ! -d $DEST/$PILOTARCHIVE ] ; then
+                mkdir $DEST/$PILOTARCHIVE
+                touch $DEST/.cvmfscatalog
+            fi
+            PILOTARCHIVE_PKG=$DEST/$PILOTARCHIVE/${PILOTPKG}-`cat $DEST/$PILOTPKG/latest/PILOTVERSION | sed 's/ /-/g'`.tar.gz
+            if [ "$PILOTPKG" == "pilot" ] ; then
+                PILOTARCHIVE_LATEST=$DEST/$PILOTARCHIVE/pilotcode-`cat $DEST/$PILOTPKG/latest/PILOTVERSION | awk '{print $1}'`.tar.gz
+                echo "PILOTARCHIVE_PKG=$PILOTARCHIVE_PKG"
+                echo "PILOTARCHIVE_LATEST=$PILOTARCHIVE_LATEST"
+                cd $DEST/$PILOTPKG/latest
+                tar cfz $PILOTARCHIVE_PKG *
+                cd -
+            else
+                PILOTARCHIVE_LATEST=$DEST/$PILOTARCHIVE/${PILOTPKG}.tar.gz
+                echo "PILOTARCHIVE_PKG=$PILOTARCHIVE_PKG"
+                echo "PILOTARCHIVE_LATEST=$PILOTARCHIVE_LATEST"
+                cd $DEST/$PILOTPKG
+                cp -a latest pilot2
+                tar cfz $PILOTARCHIVE_PKG --exclude=.git --exclude=doc --exclude=.idea --exclude=docs pilot2
+                rm -fr pilot2
+                cd -
+            fi
+            # Switch the link to the latest package
+            if [ $? -eq 0 -a -s $PILOTARCHIVE_PKG ] ; then
+                [ -L $PILOTARCHIVE_LATEST ] && rm -f $PILOTARCHIVE_LATEST
+                ln -s  `basename $PILOTARCHIVE_PKG` $PILOTARCHIVE_LATEST
+            fi
             cp -f $DEST/$PILOTPKG/latest/PILOTVERSION $DEST/$PILOTPKG/tag
             PILOTVERSION="`cat $DEST/$PILOTPKG/latest/PILOTVERSION | awk '{print $NF}'`"
             [ ! -d "$DEST/$PILOTPKG/$PILOTVERSION" ] && cp -a $DEST/$PILOTPKG/latest $DEST/$PILOTPKG/$PILOTVERSION
@@ -60,10 +87,24 @@ for PPPATH in `echo $PPPATHS | sed 's/,/ /g'`; do
                     touch $DEST/.cvmfscatalog
                 fi
                 PILOTARCHIVE_PKG=$DEST/$PILOTARCHIVE/${PILOTPKG}-`cat $DEST/$PILOTPKG/latest/PILOTVERSION | sed 's/ /-/g'`.tar.gz
-                PILOTARCHIVE_LATEST=$DEST/$PILOTARCHIVE/pilotcode-`cat $DEST/$PILOTPKG/latest/PILOTVERSION | awk '{print $1}'`.tar.gz
-                echo "PILOTARCHIVE_PKG=$PILOTARCHIVE_PKG"
-                echo "PILOTARCHIVE_LATEST=$PILOTARCHIVE_LATEST"
-                tar cfz $PILOTARCHIVE_PKG *
+                if [ "$PILOTPKG" == "pilot" ] ; then
+                    PILOTARCHIVE_LATEST=$DEST/$PILOTARCHIVE/pilotcode-`cat $DEST/$PILOTPKG/latest/PILOTVERSION | awk '{print $1}'`.tar.gz
+                    echo "PILOTARCHIVE_PKG=$PILOTARCHIVE_PKG"
+                    echo "PILOTARCHIVE_LATEST=$PILOTARCHIVE_LATEST"
+                    cd $DEST/$PILOTPKG/latest
+                    tar cfz $PILOTARCHIVE_PKG *
+                    cd -
+                else
+                    PILOTARCHIVE_LATEST=$DEST/$PILOTARCHIVE/${PILOTPKG}.tar.gz
+                    echo "PILOTARCHIVE_PKG=$PILOTARCHIVE_PKG"
+                    echo "PILOTARCHIVE_LATEST=$PILOTARCHIVE_LATEST"
+                    cd $DEST/$PILOTPKG
+                    cp -a latest pilot2
+                    tar cfz $PILOTARCHIVE_PKG --exclude=.git --exclude=doc --exclude=.idea --exclude=docs pilot2
+                    rm -fr pilot2
+                    cd -
+                fi
+                # Switch the link to the latest package
                 if [ $? -eq 0 -a -s $PILOTARCHIVE_PKG ] ; then
                     [ -L $PILOTARCHIVE_LATEST ] && rm -f $PILOTARCHIVE_LATEST
                     ln -s  `basename $PILOTARCHIVE_PKG` $PILOTARCHIVE_LATEST

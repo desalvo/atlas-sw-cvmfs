@@ -22,6 +22,8 @@ if [ -s "$INSTCONF" ] ; then
     CVMFSABORT="`grep -i ^cvmfs_abort= $INSTCONF | cut -d= -f 2`"
     CVMFSPUBLISH="`grep -i ^cvmfs_publish= $INSTCONF | cut -d= -f 2`"
     MAILTO="`grep -i ^MailTo= $INSTCONF | cut -d= -f 2`"
+    MAILTOGEN="`grep -i ^MailToGenerators= $INSTCONF | cut -d= -f 2`"
+    [ -n "$MAILTOGEN" ] && MAILTOALARM="${MAILTO},${MAILTOGEN}" || MAILTOALARM="${MAILTO}"
 fi
 
 TRANSACTION=/tmp/tmp.transaction.$$
@@ -93,6 +95,8 @@ EOD
         fi
     fi
 done
+
+echo "JORC=$rc"
 
 # MadGraphModels
 #[ ! -d $DEST/$MADGRAPHMODELSDIR ] && mkdir -p $DEST/$MADGRAPHMODELSDIR/latest
@@ -174,8 +178,6 @@ else
     if [ $HEADREV != $LOCALREV ]; then
         git pull
         currrc=$?
-    else
-        currrc=10
     fi
 fi
 if [ $currrc -eq 0 ] ; then
@@ -199,18 +201,17 @@ for JOPATH in `echo $JOLIST_GIT | sed 's/,/ /g'`; do
         [ $currrc -eq 0 ] && touch ${MCJODST}/.cvmfscatalog
     else
         cd $MCJODST
-        git fetch
+        git fetch --prune
         HEADREV=$(git rev-parse HEAD)
         LOCALREV=$(git rev-parse @{u})
         if [ $HEADREV != $LOCALREV ]; then
             git ls-files --deleted | xargs -r git checkout --
             git pull
             currrc=$?
-        else
-            currrc=10
         fi
         cd -
     fi
+    echo "MGMGPRC=$currrc"
     #
     # Recursively replace all files pointing to /eos
     #
@@ -229,29 +230,31 @@ for JOPATH in `echo $JOLIST_GIT | sed 's/,/ /g'`; do
     let rc=$rc+$currrc
 done
 
+echo "MGMRC=$rc"
+
 # PDFSets
 # For this to work, since the synchronization is performed without afs tokens,
 # the source area should be world readable
 
-[ ! -d $DEST/$PDFDIR ] && mkdir -p $DEST/$PDFDIR
-[ ! -f $DEST/$PDFDIR/.cvmfscatalog ] && touch $DEST/$PDFDIR/.cvmfscatalog
-rsync -nirl -e "ssh -l ${SVNUSERNAME} -i $HOME/.ssh/${SVNUSERNAME}_id_dsa" $PDFSETS/ $DEST/$PDFDIR | egrep -v '^sending|^sent|^total|^$' | egrep '^>|^c' | awk '{print $2}' | tee ${TRANSACTION}.flist
-if [ `cat ${TRANSACTION}.flist | wc -l` -gt 0 ] ; then
-    echo "Synchronizing `cat ${TRANSACTION}.flist | wc -l` files"
-    rsync -dlptgov --delete --files-from=${TRANSACTION}.flist -e "ssh -l ${SVNUSERNAME} -i $HOME/.ssh/${SVNUSERNAME}_id_dsa" $PDFSETS/ $DEST/$PDFDIR 2> ${TRANSACTION}.err
-    rc=$?
-    if [ $rc -eq 0 -a -s "${TRANSACTION}.flist" ] ; then
-        TSTAMP="`date +%Y%m%d%H%M`"
-        echo "  * + GroupData $TSTAMP" >> $TRANSACTION
-    else
-        cat ${TRANSACTION}.err
-    fi
-else
-    echo "No PDFSets files to synchronize"
-fi
+#[ ! -d $DEST/$PDFDIR ] && mkdir -p $DEST/$PDFDIR
+#[ ! -f $DEST/$PDFDIR/.cvmfscatalog ] && touch $DEST/$PDFDIR/.cvmfscatalog
+#rsync -nirl -e "ssh -l ${SVNUSERNAME} -i $HOME/.ssh/${SVNUSERNAME}_id_dsa" $PDFSETS/ $DEST/$PDFDIR | egrep -v '^sending|^sent|^total|^$' | egrep '^>|^c' | awk '{print $2}' | tee ${TRANSACTION}.flist
+#if [ `cat ${TRANSACTION}.flist | wc -l` -gt 0 ] ; then
+#    echo "Synchronizing `cat ${TRANSACTION}.flist | wc -l` files"
+#    rsync -dlptgov --delete --files-from=${TRANSACTION}.flist -e "ssh -l ${SVNUSERNAME} -i $HOME/.ssh/${SVNUSERNAME}_id_dsa" $PDFSETS/ $DEST/$PDFDIR 2> ${TRANSACTION}.err
+#    rc=$?
+#    if [ $rc -eq 0 -a -s "${TRANSACTION}.flist" ] ; then
+#        TSTAMP="`date +%Y%m%d%H%M`"
+#        echo "  * + GroupData $TSTAMP" >> $TRANSACTION
+#    else
+#        cat ${TRANSACTION}.err
+#    fi
+#else
+#    echo "No PDFSets files to synchronize"
+#fi
+
+# Clean up
 rm -f ${TRANSACTION}.*
-
-
 cd $CURRDIR
 
 # Automatic Changelog
@@ -298,6 +301,8 @@ if [ -n "$CHANGELOG" -a -s "$TRANSACTION" ] ; then
     fi
 fi
 
+echo "RC=$rc"
+
 # Publish changes
 if [ $rc -eq 0 ] ; then
     if [ -n "$CVMFSPUBLISH" -a -s $TRANSACTION ] ; then
@@ -316,6 +321,15 @@ EOD
         fi
     else
         [ -n "$CVMFSABORT" ] && $CVMFSABORT
+        if [ -n "$MAILTOALARM" ] ; then
+            mail -s "[ATLAS CVMFS UPDATE] `hostname`" "$MAILTOALARM" <<EOD
+Dear admin,
+the Generators files failed to install in CVMFS, please check the logs.
+Regards,
+
+     Your faithful installation agent
+EOD
+        fi
     fi
     # Clear the install lock
     $HOME/bin/unlock-install

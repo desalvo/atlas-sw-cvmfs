@@ -1,6 +1,6 @@
 #!/bin/bash
 
-VERSION="`basename $0` v1.5 - 20170704"
+VERSION="`basename $0` v1.6 - 20210415"
 help() {
     cat <<EOD
 Usage: `basename $0` [OPTION]
@@ -20,6 +20,7 @@ Usage: `basename $0` [OPTION]
    --release|-r <release name>        Release to be installed/removed,
                                       comma separated list
    --remove|-R                        Remove the give release
+   --server|-s  <ai_server>           AtlasInstall server
    --skip-dbrelease                   Skip the dbrelease installation
    --template <name>                  Use template <name>
    --trial|-t                         Perform a trial run
@@ -43,8 +44,9 @@ in_array() {
 [ -f "$PWD/.arelinstrc" ] && INSTCONF="$PWD/.arelinstrc"
 [ -f "$HOME/.arelinstrc" ] && INSTCONF="$HOME/.arelinstrc"
 
-DBURL="http://atlas-install.roma1.infn.it/atlas_install/exec/rellist.php?showdeps&showtarget&showbuild"
+AISERVER="atlas-install.roma1.infn.it"
 DBRELURL="http://atlas.web.cern.ch/Atlas/GROUPS/DATABASE/pacman4/DBRelease/"
+SKIPDBREL=1
 DEBUG=0
 REMOVE=0
 MAXINSTALLS=-1
@@ -67,7 +69,7 @@ if [ -s "$INSTCONF" ] ; then
     MAILTO="`grep -i ^MailTo= $INSTCONF | cut -d= -f 2`"
 fi
 
-OPTS=`getopt -o acdfhr:p:RtT:u: -l all-autoinstall,all-cvmfs,dbarea:,debug,force,help,ignore-install-errs,install-opts:,max-installs:,nodb,path:,platform:,project-type:,skip-dbrelease,release:,remove,template:,trial,user: -- "$@"` 
+OPTS=`getopt -o acdfhr:p:Rs:tT:u: -l all-autoinstall,all-cvmfs,dbarea:,debug,force,help,ignore-install-errs,install-opts:,max-installs:,nodb,path:,platform:,project-type:,skip-dbrelease,release:,remove,server:,template:,trial,user: -- "$@"` 
 if [ $? != 0 ] ; then echo "Terminating..."; exit -1 ; fi
 eval set -- "$OPTS"
 
@@ -87,6 +89,7 @@ while true ; do
         --release|-r)          INSTREL="$2";shift 2;;
         --remove|-R)           REMOVE=1;shift;;
         --user|-u)             USERNAME="$2";shift 2;;
+        --server|-s)           AISERVER="$2";shift 2;;
         --skip-dbrelease)      SKIPDBREL=1;shift;;
         --template)            SKIPDBREL=1;USR_INSTTMPL="$2";shift 2;;
         --dbarea)              DBAREA=$2;shift 2;;
@@ -98,6 +101,8 @@ while true ; do
     esac
 done
 
+# Build the DB URL
+DBURL="https://${AISERVER}/atlas_install/exec/rellist.php?showdeps&showtarget&showbuild"
 
 if [ -n "$INSTREL" ] ; then
     DBURL="${DBURL}&rel=${INSTREL}"
@@ -150,7 +155,7 @@ if [ -z "$SKIPDBREL" ] ; then
         done
     fi
 fi
-curl --connect-timeout 30 -s "$DBURL" 2>/dev/null >> $TMPRELLIST
+curl --connect-timeout 30 -sk "$DBURL" 2>/dev/null >> $TMPRELLIST
 allrc=0
 numinstalls=0
 if [ -s $TMPRELLIST ] ; then
@@ -221,10 +226,14 @@ if [ -s $TMPRELLIST ] ; then
             [ -n "$IGNORE_INSTALL_ERRS" ] && INSTTMPL="$INSTTMPL $IGNORE_INSTALL_ERRS"
             CMD="`echo $INSTTMPL | sed -e "s#@SITECONF@#$SITECONF#g" -e "s#@PHYSPATH@#$REL_PHYSPATH#g" -e "s#@DEFLINK@#$DEFLINK#g" -e "s#@RELARCH@#$RELARCH#g" -e "s#@RELARCHDIR@#$RELARCHDIR#g" -e "s#@RELNAME@#$RELNAME#g" -e "s#@RELVER@#$RELVER#g" -e "s#@RELSUBVER@#$RELSUBVER#g" -e "s#@RELSUBVERNODOT@#$RELSUBVERNODOT#g" -e "s#@RELMAIN@#$RELMAIN#g" -e "s#@RELTAG@#$RELTAG#g" -e "s#@VO_ATLAS_SW_DIR@#$VO_ATLAS_SW_DIR#g" -e "s#@CMAKERELDIR@#$CMAKERELDIR#g"`"
             CVMFS_CATALOG_PATH="`echo $REL_PHYSPATH | sed -e "s#@SITECONF@#$SITECONF#g" -e "s#@PHYSPATH@#$REL_PHYSPATH#g" -e "s#@DEFLINK@#$DEFLINK#g" -e "s#@RELARCH@#$RELARCH#g" -e "s#@RELARCHDIR@#$RELARCHDIR#g" -e "s#@RELNAME@#$RELNAME#g" -e "s#@RELVER@#$RELVER#g" -e "s#@RELSUBVER@#$RELSUBVER#g" -e "s#@RELSUBVERNODOT@#$RELSUBVERNODOT#g" -e "s#@RELMAIN@#$RELMAIN#g" -e "s#@RELTAG@#$RELTAG#g" -e "s#@VO_ATLAS_SW_DIR@#$VO_ATLAS_SW_DIR#g" -e "s#@CMAKERELDIR@#$CMAKERELDIR#g"`"
+            # Prepend the server name to the install command
+            CMD="--server $AISERVER $CMD"
             [ -n "$REQREL" ] && CMD="`echo $CMD | sed -e "s#@REQREL@#$REQREL#g"`"
             echo "####################################################"
             echo "#  Installing $RELPKG"
             echo "#  Using $SWMGR $CMD"
+            echo "#  If you are installing a release >= 22 make sure the following command is issued later"
+            echo "#  rm -fr /cvmfs/atlas.cern.ch/repo/sw/software/22.0/{dqm-common,tdaq-common,tdaq}"
             echo "####################################################"
             if [ -z "$TRIAL" ] ; then
                 let numinstalls=$numinstalls+1
