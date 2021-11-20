@@ -60,7 +60,8 @@ BASEIMGDIR="$HOME/singularity/base"
 OUTDIR="$OUTBASEDIR/images/singularity/${ARCH}"
 EXPORTDIR="$OUTBASEDIR/export/singularity"
 FSDIR="$OUTBASEDIR/fs/singularity/${ARCH}"
-LINKDIR="$OUTBASEDIR/images/singularity"
+IMGLINKDIR="$OUTBASEDIR/images/singularity"
+FSLINKDIR="$OUTBASEDIR/fs/singularity"
 TOPDIR=$PWD
 export SINGULARITY_CACHEDIR=/tmp/singularity.$$
 [ ! -d "$SINGULARITY_CACHEDIR" ] && mkdir -p $SINGULARITY_CACHEDIR
@@ -145,12 +146,12 @@ if [ $cmdrc -eq 0 ] ; then
     echo "Moving fs from ${TMPDIR}/${OUTIMG}-${SHASUM} to ${FSDIR}/${OUTIMG}-${SHASUM}"
     [ ! -d ${FSDIR} ] && mkdir -p ${FSDIR}
     mv ${TMPDIR}/${OUTIMG}-${SHASUM} ${FSDIR}
-    echo "Linking ${LINKDIR}/${IMAGE_LINK} to ${ARCH}/${OUTIMG}-${SHASUM}"
-    rm -f ${LINKDIR}/${IMAGE_LINK}
-    ln -sf ${ARCH}/${OUTIMG}-${SHASUM} ${LINKDIR}/${IMAGE_LINK}
-    echo "Linking ${LINKDIR}/${IMAGE_LINK}.img to ${ARCH}/${OUTIMG}-${SHASUM}.img"
-    rm -f ${LINKDIR}/${IMAGE_LINK}.img
-    ln -sf ${ARCH}/${OUTIMG}-${SHASUM}.img ${LINKDIR}/${IMAGE_LINK}.img
+    echo "Linking ${FSLINKDIR}/${IMAGE_LINK} to ${ARCH}/${OUTIMG}-${SHASUM}"
+    rm -f ${FSLINKDIR}/${IMAGE_LINK}
+    ln -sf ${ARCH}/${OUTIMG}-${SHASUM} ${FSLINKDIR}/${IMAGE_LINK}
+    echo "Linking ${IMGLINKDIR}/${IMAGE_LINK}.img to ${ARCH}/${OUTIMG}-${SHASUM}.img"
+    rm -f ${IMGLINKDIR}/${IMAGE_LINK}.img
+    ln -sf ${ARCH}/${OUTIMG}-${SHASUM}.img ${IMGLINKDIR}/${IMAGE_LINK}.img
     cd ${OUTBASEDIR}
     [ ! -d "`dirname ${PKGNAME}`" ] && mkdir -p "`dirname ${PKGNAME}`"
     echo "Changing the full tree ownership"
