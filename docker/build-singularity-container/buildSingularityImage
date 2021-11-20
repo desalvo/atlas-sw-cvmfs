@@ -153,6 +153,8 @@ if [ $cmdrc -eq 0 ] ; then
     ln -sf ${ARCH}/${OUTIMG}-${SHASUM}.img ${LINKDIR}/${IMAGE_LINK}.img
     cd ${OUTBASEDIR}
     [ ! -d "`dirname ${PKGNAME}`" ] && mkdir -p "`dirname ${PKGNAME}`"
+    echo "Changing the full tree ownership"
+    chown -R cvatlas.cvatlas .
     echo "Creating package ${PKGNAME}"
     tar cfz ${PKGNAME} *
     if [ $? -eq 0 ] ; then
