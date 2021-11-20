@@ -156,7 +156,7 @@ if [ $cmdrc -eq 0 ] ; then
     echo "Changing the full tree ownership"
     chown -R cvatlas.cvatlas .
     echo "Creating package ${PKGNAME}"
-    tar cfz ${PKGNAME} *
+    tar cfz ${PKGNAME} images/singularity/${ARCH}/${OUTIMG}-${SHASUM}.img fs/singularity/${ARCH}/${OUTIMG}-${SHASUM}
     if [ $? -eq 0 ] ; then
       echo "Package successfully created as ${PKGNAME}"
     else
