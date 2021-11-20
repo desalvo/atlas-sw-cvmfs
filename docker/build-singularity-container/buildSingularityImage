@@ -57,9 +57,10 @@ TS="`date --utc +%Y%m%d%H%M%S`"
 OUTIMG="${IMAGE_NAME}-${TS}"
 TMPDIR=/tmp
 BASEIMGDIR="$HOME/singularity/base"
-OUTDIR="$OUTBASEDIR/images/singularity"
+OUTDIR="$OUTBASEDIR/images/singularity/${ARCH}"
 EXPORTDIR="$OUTBASEDIR/export/singularity"
-FSDIR="$OUTBASEDIR/fs/singularity"
+FSDIR="$OUTBASEDIR/fs/singularity/${ARCH}"
+LINKDIR="$OUTBASEDIR/images/singularity"
 TOPDIR=$PWD
 export SINGULARITY_CACHEDIR=/tmp/singularity.$$
 [ ! -d "$SINGULARITY_CACHEDIR" ] && mkdir -p $SINGULARITY_CACHEDIR
@@ -144,12 +145,12 @@ if [ $cmdrc -eq 0 ] ; then
     echo "Moving fs from ${TMPDIR}/${OUTIMG}-${SHASUM} to ${FSDIR}/${OUTIMG}-${SHASUM}"
     [ ! -d ${FSDIR} ] && mkdir -p ${FSDIR}
     mv ${TMPDIR}/${OUTIMG}-${SHASUM} ${FSDIR}
-    echo "Linking ${FSDIR}/${ARCH}-${IMAGE_NAME} to ${OUTIMG}-${SHASUM}"
-    rm -f ${FSDIR}/${ARCH}-${IMAGE_NAME}
-    ln -sf ${OUTIMG}-${SHASUM} ${FSDIR}/${IMAGE_LINK}
-    echo "Linking ${OUTDIR}/${ARCH}-${IMAGE_NAME}.img to ${OUTIMG}-${SHASUM}.img"
-    rm -f ${OUTDIR}/${ARCH}-${IMAGE_NAME}.img
-    ln -sf ${OUTIMG}-${SHASUM}.img ${OUTDIR}/${IMAGE_LINK}.img
+    echo "Linking ${LINKDIR}/${IMAGE_LINK} to ${ARCH}/${OUTIMG}-${SHASUM}"
+    rm -f ${LINKDIR}/${IMAGE_LINK}
+    ln -sf ${ARCH}/${OUTIMG}-${SHASUM} ${LINKDIR}/${IMAGE_LINK}
+    echo "Linking ${LINKDIR}/${IMAGE_LINK}.img to ${ARCH}/${OUTIMG}-${SHASUM}.img"
+    rm -f ${LINKDIR}/${IMAGE_LINK}.img
+    ln -sf ${ARCH}/${OUTIMG}-${SHASUM}.img ${LINKDIR}/${IMAGE_LINK}.img
     cd ${OUTBASEDIR}
     [ ! -d "`dirname ${PKGNAME}`" ] && mkdir -p "`dirname ${PKGNAME}`"
     echo "Creating package ${PKGNAME}"
