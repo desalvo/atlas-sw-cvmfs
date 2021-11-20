@@ -5168,6 +5168,13 @@ baseurl=http://cern.ch/lcgpackages/lcg/repo/7/LCG_100
 prefix=${RELLOC}/sw/lcg/releases
 enabled=1
 EOF
+    cat - >./etc/yum.repos.d/lcg101.repo <<EOF
+[lcg-101-repo]
+name=LCG 101 Repository
+baseurl=http://cern.ch/lcgpackages/lcg/repo/7/LCG_101
+prefix=${RELLOC}/sw/lcg/releases
+enabled=1
+EOF
     cat - >./etc/yum.repos.d/lcg-contrib.repo <<EOF
 [lcg-contrib]
 name=LCG Contrib
