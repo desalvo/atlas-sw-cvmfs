@@ -161,7 +161,15 @@ if [ $cmdrc -eq 0 ] ; then
     echo "Changing the full tree ownership"
     chown -R cvatlas.cvatlas .
     echo "Creating package ${PKGNAME}"
-    tar cfz ${PKGNAME} images/apptainer/${IMAGE_LINK}.img images/apptainer/${ARCH}/${OUTIMG}-${SHASUM}.img fs/apptainer/${IMAGE_LINK} fs/apptainer/${ARCH}/${OUTIMG}-${SHASUM}
+    if [ -z "$NOLINK" ] ; then
+      tar cfz ${PKGNAME} images/apptainer/${IMAGE_LINK}.img \
+                         images/apptainer/${ARCH}/${OUTIMG}-${SHASUM}.img \
+                         fs/apptainer/${IMAGE_LINK} \
+                         fs/apptainer/${ARCH}/${OUTIMG}-${SHASUM}
+    else
+      tar cfz ${PKGNAME} images/apptainer/${ARCH}/${OUTIMG}-${SHASUM}.img \
+                         fs/apptainer/${ARCH}/${OUTIMG}-${SHASUM}
+    fi
     if [ $? -eq 0 ] ; then
       echo "Package successfully created as ${PKGNAME}"
     else
