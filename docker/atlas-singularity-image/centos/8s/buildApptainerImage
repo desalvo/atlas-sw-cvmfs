@@ -11,6 +11,7 @@ Usage: `basename $0` [OPTION]
    --help|-h                          Display this help
    --docker-image|-D <name>           Docker image name
                                       default: atlasadc/atlas-grid-<image-name>
+   --nolink|-N                        Do not create image and fs symlinks
    --out|-o <path>                    Out base dir
                                       current: $OUTBASEDIR
    --pkg|-p <file>                    Package file name
@@ -26,7 +27,7 @@ OUTBASEDIR="/root/containers"
 ARCH="`uname -m`"
 DATE="`date +%Y%m%d%H%M`"
 
-OPTS=`getopt -o D:hl:n:o:p:t -l docker-image:,help,link:,name:,out:,pkg:,trial -- "$@"`
+OPTS=`getopt -o D:hl:n:No:p:t -l docker-image:,help,link:,name:,nolink,out:,pkg:,trial -- "$@"`
 if [ $? != 0 ] ; then echo "Terminating..."; exit -1 ; fi
 eval set -- "$OPTS"
 
@@ -35,6 +36,7 @@ while true ; do
         --docker-image|-D)     DOCKER_IMAGE="$2";shift 2;;
         --link|-l)             IMAGE_LINK="$2";shift 2;;
         --name|-n)             IMAGE_NAME="$2";shift 2;;
+        --nolink|-N)           NOLINK="y";shift;;
         --out|-o)              OUTBASEDIR="$2";shift 2;;
         --pkg|-p)              PKGNAME="$2";shift 2;;
         --trial|-t)            TRIAL="y";shift;;
@@ -146,12 +148,14 @@ if [ $cmdrc -eq 0 ] ; then
     echo "Moving fs from ${TMPDIR}/${OUTIMG}-${SHASUM} to ${FSDIR}/${OUTIMG}-${SHASUM}"
     [ ! -d ${FSDIR} ] && mkdir -p ${FSDIR}
     mv ${TMPDIR}/${OUTIMG}-${SHASUM} ${FSDIR}
-    echo "Linking ${FSLINKDIR}/${IMAGE_LINK} to ${ARCH}/${OUTIMG}-${SHASUM}"
-    rm -f ${FSLINKDIR}/${IMAGE_LINK}
-    ln -sf ${ARCH}/${OUTIMG}-${SHASUM} ${FSLINKDIR}/${IMAGE_LINK}
-    echo "Linking ${IMGLINKDIR}/${IMAGE_LINK}.img to ${ARCH}/${OUTIMG}-${SHASUM}.img"
-    rm -f ${IMGLINKDIR}/${IMAGE_LINK}.img
-    ln -sf ${ARCH}/${OUTIMG}-${SHASUM}.img ${IMGLINKDIR}/${IMAGE_LINK}.img
+    if [ -z "$NOLINK" ] ; then
+      echo "Linking ${FSLINKDIR}/${IMAGE_LINK} to ${ARCH}/${OUTIMG}-${SHASUM}"
+      rm -f ${FSLINKDIR}/${IMAGE_LINK}
+      ln -sf ${ARCH}/${OUTIMG}-${SHASUM} ${FSLINKDIR}/${IMAGE_LINK}
+      echo "Linking ${IMGLINKDIR}/${IMAGE_LINK}.img to ${ARCH}/${OUTIMG}-${SHASUM}.img"
+      rm -f ${IMGLINKDIR}/${IMAGE_LINK}.img
+      ln -sf ${ARCH}/${OUTIMG}-${SHASUM}.img ${IMGLINKDIR}/${IMAGE_LINK}.img
+    fi
     cd ${OUTBASEDIR}
     [ ! -d "`dirname ${PKGNAME}`" ] && mkdir -p "`dirname ${PKGNAME}`"
     echo "Changing the full tree ownership"
