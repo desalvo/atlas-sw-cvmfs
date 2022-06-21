@@ -1,6 +1,6 @@
 #!/bin/bash
 
-VERSION="sw-mgr v0.257.1 - 20220603"
+VERSION="sw-mgr v0.258.1 - 20220621"
 help() {
     cat <<EOD
 Usage: `basename $0` [OPTION]
@@ -5278,6 +5278,11 @@ enabled=1
 name=ATLAS release 21.9
 baseurl=http://cern.ch/atlas-software-dist-eos/RPMs/releases/21.9
 enabled=1
+
+[atlas-release-0.0]
+name=ATLAS release 0.0
+baseurl=http://cern.ch/atlas-software-dist-eos/RPMs/releases/0.0
+enabled=1
 EOF
 
     # Setup environment to run the ayum command:
@@ -5345,6 +5350,7 @@ autoconfig() {
                                            PRJTYPE="release"
                                            case $TSKNAME in
                                                prod|dev) PRJTYPE="release";;
+                                               prod-cmake|dev-cmake) PRJTYPE="cmake";;
                                                prod-patch|dev-patch) PRJTYPE="patch";;
                                                dq2tools|gcc) PRJTYPE="ext";;
                                                nightlies) PRJTYPE="`echo $AUTOCONF | cut -d ':' -f 2- | cut -d '-' -f 2- | cut -d '_' -f 2`";;
