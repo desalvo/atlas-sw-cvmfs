@@ -1,6 +1,6 @@
 #!/bin/bash
 
-VERSION="sw-mgr v0.258.1 - 20220621"
+VERSION="sw-mgr v0.259.1 - 20220624"
 help() {
     cat <<EOD
 Usage: `basename $0` [OPTION]
@@ -1802,7 +1802,7 @@ install() {
             if [ -z "`which ayum 2>/dev/null`" ] ; then
                 export PATH=$AYUM_DIR/bin:$PATH
             fi
-            AYUM_ARCH="`echo $ARCH | sed -E 's/^_+(i686|x86_64).(slc[0-9]*|centos[0-9]*).(gcc[0-9]{1,2}).*/\1-\2-\3/'`-$PRJOPT"
+            AYUM_ARCH="`echo $ARCH | sed -E 's/^_+(i686|x86_64|aarch64).(slc[0-9]*|centos[0-9]*).(gcc[0-9]{1,2}).*/\1-\2-\3/'`-$PRJOPT"
             AYUM_REL="${PRJNAME}"
             [ -z "$NOVERSION" ] && AYUM_REL="${AYUM_REL}_${RELEASE}_${AYUM_ARCH}"
             msgOut INFO "Installing ${AYUM_REL}"
@@ -3399,7 +3399,7 @@ remove() {
         if [ -z "`which ayum 2>/dev/null`" ] ; then
             export PATH=$AYUM_DIR/bin:$PATH
         fi
-        AYUM_ARCH="`echo $ARCH | sed -E 's/^_+(i686|x86_64).(slc[0-9]*|cc[0-9]*).(gcc[0-9][0-9])/\1-\2-\3/'`-$PRJOPT"
+        AYUM_ARCH="`echo $ARCH | sed -E 's/^_+(i686|x86_64|aarch64).(slc[0-9]*|cc[0-9]*).(gcc[0-9][0-9])/\1-\2-\3/'`-$PRJOPT"
         AYUM_REL="${PRJNAME}"
         [ -z "$NOVERSION" ] && AYUM_REL="${AYUM_REL}_${RELEASE}_${AYUM_ARCH}"
         msgOut INFO "Removing ${AYUM_REL}"
@@ -5181,6 +5181,12 @@ name=LCG Contrib
 baseurl=http://lcgpackages.web.cern.ch/lcgpackages/rpms_contrib
 prefix=${RELLOC}/sw/lcg/releases
 enabled=1
+
+[lcg-contrib-centos7]
+name=LCG Contrib centos7
+baseurl=https://lcgpackages.web.cern.ch/lcg/contrib/7
+prefix=${RELLOC}/sw/lcg/releases
+enabled=1
 EOF
 
     cat - >./etc/yum.repos.d/atlas-offline-data.repo <<EOF
@@ -5283,6 +5289,11 @@ enabled=1
 name=ATLAS release 0.0
 baseurl=http://cern.ch/atlas-software-dist-eos/RPMs/releases/0.0
 enabled=1
+
+[atlas-release-0.1]
+name=ATLAS release 0.1
+baseurl=http://cern.ch/atlas-software-dist-eos/RPMs/releases/0.1
+enabled=1
 EOF
 
     # Setup environment to run the ayum command:
@@ -5309,7 +5320,7 @@ autoconfig() {
         rm -f $AUTOCONF_TMP
         ACURL="https://${AISERVER}/atlas_install/info/showrel.php"
         msgOut INFO "Autoconfiguring release $AUTOCONF from $ACURL"
-        RELINFO="`echo ${AUTOCONF} | sed -e 's/\([^_]\)_\(.*\)\(_i686_slc[0-9]*_gcc[0-9]*\)_\(.*\)/\1 \2 \3/' -e 's/\([^_]\)_\(.*\)\(_x86_64_slc[0-9]*_gcc[0-9]*\)_\(.*\)/\1 \2 \3/'`"
+        RELINFO="`echo ${AUTOCONF} | sed -e 's/\([^_]\)_\(.*\)\(_i686_slc[0-9]*_gcc[0-9]*\)_\(.*\)/\1 \2 \3/' -e 's/\([^_]\)_\(.*\)\(_x86_64_slc[0-9]*_gcc[0-9]*\)_\(.*\)/\1 \2 \3/' -e 's/\([^_]\)_\(.*\)\(_aarch64_slc[0-9]*_gcc[0-9]*\)_\(.*\)/\1 \2 \3/'`"
         if [ "$RELINFO" == "${AUTOCONF}" ] ; then
             RELCONFDATA="`curl --connect-timeout 300 -sk  $ACURL?rel=${AUTOCONF}`"
             MAINRELVER="`echo $AUTOCONF | cut -d: -f 2 | cut -d- -f 1 | awk -F "." '{for (i=1;i<=3;i++) ver=sprintf("%s%02d",ver,$i)}END{print int(ver)}'`"
