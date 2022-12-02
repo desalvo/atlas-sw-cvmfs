@@ -1,6 +1,6 @@
 #!/bin/bash
 
-VERSION="sw-mgr v0.259.1 - 20220624"
+VERSION="sw-mgr v0.260.1 - 20221202"
 help() {
     cat <<EOD
 Usage: `basename $0` [OPTION]
@@ -5146,6 +5146,14 @@ prefix=${RELLOC}/sw/lcg/releases
 enabled=1
 EOF
 
+    cat - >./etc/yum.repos.d/lcg-packages.repo <<EOF
+[lcg-c7-repo]
+name=LCG Packages Repository
+baseurl=http://lcgpackages.web.cern.ch/lcg/repo/7/\$basearch/Packages
+prefix=${RELLOC}/sw/lcg/releases
+enabled=1
+EOF
+
     cat - >./etc/yum.repos.d/lcg97.repo <<EOF
 [lcg-97-repo]
 name=LCG 97 Repository
@@ -5172,6 +5180,13 @@ EOF
 [lcg-101-repo]
 name=LCG 101 Repository
 baseurl=http://cern.ch/lcgpackages/lcg/repo/7/LCG_101
+prefix=${RELLOC}/sw/lcg/releases
+enabled=1
+EOF
+    cat - >./etc/yum.repos.d/lcg102.repo <<EOF
+[lcg-102-repo]
+name=LCG 102 Repository
+baseurl=http://cern.ch/lcgpackages/lcg/repo/7/x86_64/LCG_102
 prefix=${RELLOC}/sw/lcg/releases
 enabled=1
 EOF

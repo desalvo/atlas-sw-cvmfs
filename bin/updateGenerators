@@ -23,6 +23,7 @@ if [ -s "$INSTCONF" ] ; then
     CVMFSPUBLISH="`grep -i ^cvmfs_publish= $INSTCONF | cut -d= -f 2`"
     MAILTO="`grep -i ^MailTo= $INSTCONF | cut -d= -f 2`"
     MAILTOGEN="`grep -i ^MailToGenerators= $INSTCONF | cut -d= -f 2`"
+    FILEEXCLUDE="`grep -i ^GeneratorsFileExclude= $INSTCONF | cut -d= -f 2`"
     [ -n "$MAILTOGEN" ] && MAILTOALARM="${MAILTO},${MAILTOGEN}" || MAILTOALARM="${MAILTO}"
 fi
 
@@ -162,7 +163,8 @@ kinit -kt ${SVNUSERNAME}.keytab ${SVNUSERNAME}@CERN.CH
 # git based
 
 currrc=0
-MGSRC="https://:@gitlab.cern.ch:8443/atlas-generators-team/MadGraphModels.git"
+#MGSRC="https://:@gitlab.cern.ch:8443/atlas-generators-team/MadGraphModels.git"
+MGSRC="ssh://git@atlcvmfs.gitlab.cern.ch:7999/atlas-generators-team/MadGraphModels.git"
 MGDST="$DEST/$MADGRAPHMODELSDIR/latest"
 echo "Syncing MadGraphModels from $MGSRC to $MGDST"
 if [ ! -d `dirname $MGDST` ] ; then
@@ -216,11 +218,38 @@ for JOPATH in `echo $JOLIST_GIT | sed 's/,/ /g'`; do
     # Recursively replace all files pointing to /eos
     #
     if [ $currrc -eq 0 ] ; then
+        NUMFILES=0
+        MAXFILES=500
         find $MCJODST/* -type l -ilname "/eos/*" | while read l; do
             lt="`readlink $l`"
-            echo "Copying $lt to $PWD/$l"
-            rm -f $l
-            scp atlcvmfs@lxplus.cern.ch:$lt $l
+            [ -n "$FILEEXCLUDE" -a -s $FILEEXCLUDE ] && FBL="`grep $lt $FILEEXCLUDE 2>/dev/null`" || FBL=""
+            if [ -z "$FBL"] ; then
+                echo "Copying $lt to $l"
+                scp atlcvmfs@lxplus.cern.ch:$lt ${l}.tmp
+                if [ -s ${l}.tmp ] ; then
+                    rm -f ${l}
+                    mv ${l}.tmp ${l}
+                    NUMFILES=$((NUMFILES+1))
+                    echo "FILE COPIED SUCCESSFULLY [$NUMFILES/$MAXFILES]"
+                elif [ "`basename $MCJODST`" == "MC16JobOptions" ] ; then
+                    rm -f ${l}.tmp
+                    bl="/eos/atlas/atlascerngroupdisk/phys-gener/Backups/MC16JobOptions/`echo $l | sed "s#$MCJODST/##"`"
+                    echo "Copying from backup $bl to $l"
+                    scp atlcvmfs@lxplus.cern.ch:$bl ${l}.tmp
+                    if [ -s ${l}.tmp ] ; then
+                        rm -f ${l}
+                        mv ${l}.tmp ${l}
+                        NUMFILES=$((NUMFILES+1))
+                        echo "FILE COPIED SUCCESSFULLY FROM BACKUP [$NUMFILES/$MAXFILES]"
+                    else
+                        echo "NO FILE FOUND ON BACKUP FOR ${l}"
+                    fi
+                else
+                    echo "NO BACKUP AVAILABLE FOR ${l}"
+                fi
+                rm -f ${l}.tmp
+            fi
+            [ $NUMFILES -gt $MAXFILES ] && break
         done
     fi
     if [ $currrc -eq 0 ] ; then
