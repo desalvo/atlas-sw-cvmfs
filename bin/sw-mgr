@@ -1,6 +1,6 @@
 #!/bin/bash
 
-VERSION="sw-mgr v0.260.1 - 20221202"
+VERSION="sw-mgr v0.261.1 - 20221222"
 help() {
     cat <<EOD
 Usage: `basename $0` [OPTION]
@@ -5253,6 +5253,13 @@ enabled=1
 name=ATLAS release 23.0
 baseurl=http://cern.ch/atlas-software-dist-eos/RPMs/releases/23.0
 enabled=1
+
+[atlas-release-23.6]
+name=ATLAS release 23.6
+baseurl=http://cern.ch/atlas-software-dist-eos/RPMs/releases/23.6
+enabled=1
+
+[atlas-release-22.6]
 
 [atlas-release-22.6]
 name=ATLAS release 22.6
