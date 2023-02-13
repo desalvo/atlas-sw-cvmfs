@@ -1,6 +1,6 @@
 #!/bin/bash
 
-VERSION="sw-mgr v0.261.1 - 20221222"
+VERSION="sw-mgr v0.262.1 - 20230213"
 help() {
     cat <<EOD
 Usage: `basename $0` [OPTION]
@@ -5128,6 +5128,9 @@ setupAyum() {
     sed 's/AYUM package location.*//' yum.conf > yum.conf.fixed
     mv -f yum.conf.fixed yum.conf
 
+    # Repo arch
+    AYUM_REPO_ARCH="`echo $ARCH | sed -E 's/^_+(i686|x86_64|aarch64).(slc[0-9]*|cc[0-9]*|centos[7-9]*).(gcc[0-9]+)/\1/'`"
+
     # Configure the ayum repositories:
     cat - >./etc/yum.repos.d/lcg.repo <<EOF
 [lcg-repo]
@@ -5149,7 +5152,8 @@ EOF
     cat - >./etc/yum.repos.d/lcg-packages.repo <<EOF
 [lcg-c7-repo]
 name=LCG Packages Repository
-baseurl=http://lcgpackages.web.cern.ch/lcg/repo/7/\$basearch/Packages
+#baseurl=http://lcgpackages.web.cern.ch/lcg/repo/7/\$basearch/Packages
+baseurl=http://lcgpackages.web.cern.ch/lcg/repo/7/$AYUM_REPO_ARCH/Packages
 prefix=${RELLOC}/sw/lcg/releases
 enabled=1
 EOF
@@ -5186,7 +5190,7 @@ EOF
     cat - >./etc/yum.repos.d/lcg102.repo <<EOF
 [lcg-102-repo]
 name=LCG 102 Repository
-baseurl=http://cern.ch/lcgpackages/lcg/repo/7/x86_64/LCG_102
+baseurl=http://cern.ch/lcgpackages/lcg/repo/7/${AYUM_REPO_ARCH}/LCG_102
 prefix=${RELLOC}/sw/lcg/releases
 enabled=1
 EOF
