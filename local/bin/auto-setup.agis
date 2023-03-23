@@ -1,0 +1,204 @@
+#!/bin/bash
+
+######################################################################
+#                  ATLAS Auto-Setup configuration file               #
+#                  Usage: source auto-setup [SITENAME]               #
+#  Alessandro De Salvo <Alessandro.DeSalvo@roma1.infn.it> - 20201110 #
+######################################################################
+
+ASVERSION="auto-setup v2.3.0 - 20201110"
+show_help() {
+    cat <<EOD
+Usage: auto-setup [OPTION]
+   OPTIONS
+   -------
+   --cric|-c                       Use CRIC instead of AGIS as source
+   --debug|-d                      Enable debug mode
+   --help|-h                       Show this help
+   --resource|-r <res>             Panda resource name
+   --trial|-t                      Trial run
+   --verbose|-v                    Enable verbose mode
+   --version|-V                    Show the version
+$ASVERSION
+Alessandro De Salvo <Alessandro.DeSalvo@roma1.infn.it>
+EOD
+}
+
+path_prepend() {
+    eval export ${1}="$2:`eval echo \\$\${1} | sed -e "s#$2##g" -e "s#^:*##g"`"
+}
+
+setup_dcache() {
+    export DCACHE_RAHEAD=TRUE
+    export DCACHE_RA_BUFFER=32768
+    export DC_LOCAL_CACHE_BUFFER=1
+    export DC_LOCAL_CACHE_BLOCK_SIZE=131072
+    export DC_LOCAL_CACHE_MEMORY_PER_FILE=10000000
+    GLV="`getconf  GNU_LIBC_VERSION 2>/dev/null | awk '{print $NF}' | awk -F. '{printf "%d%02d", $1, $2}'`"
+    [ -z "$GLV" ] && GLV=0
+    [ $GLV -gt 205 ] && PLATF="el6" || PLATF="el5"
+
+    if [ -f "/etc/emi-release" -o -f $EMI_TARBALL_BASE/etc/emi-release ] ; then
+        path_prepend LD_LIBRARY_PATH ${VO_ATLAS_SW_DIR}/local/emi/dcache/${PLATF}/lib:${VO_ATLAS_SW_DIR}/local/emi/dcache/${PLATF}/lib64
+    else
+        path_prepend LD_LIBRARY_PATH ${VO_ATLAS_SW_DIR}/local/glite/dcache/lib:${VO_ATLAS_SW_DIR}/local/glite/dcache/lib64
+    fi
+}
+
+setup_dpm() {
+    #export LD_PRELOAD=$VO_ATLAS_SW_DIR/local/dpm/'$LIB'/libglobus_gssapi_gsi_gcc32dbgpthr.so
+    if [ -f "/etc/emi-release" ] ; then
+        path_prepend LD_LIBRARY_PATH $VO_ATLAS_SW_DIR/local/emi/dpm/lib:$VO_ATLAS_SW_DIR/local/emi/dpm/lib64
+    else
+        path_prepend LD_LIBRARY_PATH $VO_ATLAS_SW_DIR/local/glite/dpm/lib:$VO_ATLAS_SW_DIR/local/glite/dpm/lib64
+    fi
+}
+
+# Initialize the return code
+rc=0
+
+# Check if we're running executed or sourced
+if [ "$BASH_SOURCE" == "$0" ] ; then
+    echo "You should source auto-setup, not execute it"
+    exit 1
+fi
+
+if [ -z "$VO_ATLAS_SW_DIR" ] ; then
+    # Get the full path to the software root directory
+    SOURCE="${BASH_SOURCE[0]}"
+    while [ -h "$SOURCE" ] ; do
+        SOURCE="$(readlink "$SOURCE")"
+    done
+    DIR="$( cd -P "$( dirname "$SOURCE" )" && pwd )"
+    export VO_ATLAS_SW_DIR="`readlink -f $DIR/../..`"
+fi
+
+# Defaults
+SITOOL="agis-site-info"
+
+# CLI options
+OPTS=`getopt -o cdhr:tvV -l cric,debug,help,resource:,trial,verbose,version -- "$@"`
+if [ $? != 0 ] ; then echo "Terminating..."; return -1 ; fi
+eval set -- "$OPTS"
+
+while true ; do
+    case "$1" in
+        --debug|-d)    ASDEBUG="yes";shift;;
+        --cric|-c)     SITOOL="cric-site-info";shift;;
+        --help|-h)     show_help;shift;return 0;;
+        --resource|-r) ASPANDA_RESOURCE="$2";shift 2;;
+        --trial|-t)    ASTRIAL="yes";shift;;
+        --verbose|-v)  ASVERBOSE="yes";shift;;
+        --version|-V)  echo $ASVERSION;shift;return 0;;
+        --)            shift;break;;
+        \?)            break;
+        exit;;
+    esac
+done
+
+# Set the custom site name, if provided
+[ -n "$1" ] && CUSTOM_SITE_NAME="$1"
+
+# Choose which site name to use
+if [ -n "$ASPANDA_RESOURCE" ] ; then
+    LOCAL_SITE_NAME="`$VO_ATLAS_SW_DIR/local/bin/$SITOOL -n $ASPANDA_RESOURCE`"
+    # Publish the site info
+    $VO_ATLAS_SW_DIR/local/bin/publish-site-info $ASPANDA_RESOURCE
+elif [ -n "$CUSTOM_SITE_NAME" ] ; then
+    LOCAL_SITE_NAME="$CUSTOM_SITE_NAME"
+    unset CUSTOM_SITE_NAME
+elif [ -n "$ATLAS_SITE_NAME" ] ; then
+    LOCAL_SITE_NAME="$ATLAS_SITE_NAME"
+elif [ -n "$SITE_NAME" ] ; then
+    LOCAL_SITE_NAME="$SITE_NAME"
+fi
+
+[ -n "$ASDEBUG" ] && ASDEBUG_OPT="-d"
+if [ -n "$LOCAL_SITE_NAME" ] ; then
+    # Site Info Tool
+    [ -n "$ASVERBOSE" ] && echo "AUTO-SETUP> using site info tool $SITOOL"
+
+    # Set VO_ATLAS_AGIS_SITE
+    export VO_ATLAS_AGIS_SITE=$LOCAL_SITE_NAME
+
+    # Auto setup Frontier
+    if [ -z "$ASTRIAL" ] ; then
+        export FRONTIER_SERVER="`$VO_ATLAS_SW_DIR/local/bin/$SITOOL -f -s $LOCAL_SITE_NAME $ASDEBUG_OPT`"
+    else
+        [ -n "$ASDEBUG" ] && echo "$VO_ATLAS_SW_DIR/local/bin/$SITOOL -f -s $LOCAL_SITE_NAME $ASDEBUG_OPT"
+        export FRONTIER_SERVER_TRIAL="`$VO_ATLAS_SW_DIR/local/bin/$SITOOL -f -s $LOCAL_SITE_NAME $ASDEBUG_OPT`"
+    fi
+    if [ -z "$FRONTIER_SERVER" -a -z "$FRONTIER_SERVER_TRIAL" ] ; then
+        echo "AUTO-SETUP> ERROR: No Frontier server settings for site $LOCAL_SITE_NAME"
+        rc=2
+    else
+        [ -z "$ASTRIAL" ] && export FRONTIER_LOG_LEVEL="warning" || FRONTIER_LOG_LEVEL_TRIAL="warning"
+    fi
+    if [ -n "$ASTRIAL" ] ; then
+        echo "AUTO-SETUP> FRONTIER_SERVER=$FRONTIER_SERVER_TRIAL"
+        echo "AUTO-SETUP> FRONTIER_LOG_LEVEL=$FRONTIER_LOG_LEVEL_TRIAL"
+    fi
+
+    # Auto setup the DQ2_LOCAL_SITE_ID
+    if [ -z "$ASTRIAL" ] ; then
+        export DQ2_LOCAL_SITE_ID="`$VO_ATLAS_SW_DIR/local/bin/$SITOOL -i -s $LOCAL_SITE_NAME $ASDEBUG_OPT`"
+    else
+        export DQ2_LOCAL_SITE_ID_TRIAL="`$VO_ATLAS_SW_DIR/local/bin/$SITOOL -i -s $LOCAL_SITE_NAME $ASDEBUG_OPT`"
+    fi
+    if [ -z "$DQ2_LOCAL_SITE_ID" -a -z "$DQ2_LOCAL_SITE_ID_TRIAL" ] ; then
+        [ -n "$ASVERBOSE" ] && echo "No DQ2_LOCAL_SITE_ID for site $LOCAL_SITE_NAME. Using ROAMING"
+        [ -z "$ASTRIAL" ] && export DQ2_LOCAL_SITE_ID="ROAMING" || export DQ2_LOCAL_SITE_ID_TRIAL="ROAMING"
+        #rc=3
+    fi
+    [ -n "$ASTRIAL" ] && echo "AUTO-SETUP> DQ2_LOCAL_SITE_ID=$DQ2_LOCAL_SITE_ID_TRIAL"
+
+    # Auto setup the RUCIO_LOCAL_SITE_ID
+    if [ -z "$ASTRIAL" ] ; then
+        export RUCIO_LOCAL_SITE_ID="`$VO_ATLAS_SW_DIR/local/bin/$SITOOL -i -s $LOCAL_SITE_NAME $ASDEBUG_OPT`"
+    else
+        export RUCIO_LOCAL_SITE_ID_TRIAL="`$VO_ATLAS_SW_DIR/local/bin/$SITOOL -i -s $LOCAL_SITE_NAME $ASDEBUG_OPT`"
+    fi
+    if [ -z "$RUCIO_LOCAL_SITE_ID" -a -z "$RUCIO_LOCAL_SITE_ID_TRIAL" ] ; then
+        [ -n "$ASVERBOSE" ] && echo "No RUCIO_LOCAL_SITE_ID for site $LOCAL_SITE_NAME. Using $LOCAL_SITE_NAME instead."
+        [ -z "$ASTRIAL" ] && export RUCIO_LOCAL_SITE_ID="$LOCAL_SITE_NAME" || export RUCIO_LOCAL_SITE_ID_TRIAL="$LOCAL_SITE_NAME"
+        #rc=3
+    fi
+    [ -n "$ASTRIAL" ] && echo "AUTO-SETUP> RUCIO_LOCAL_SITE_ID=$RUCIO_LOCAL_SITE_ID_TRIAL"
+
+    # Auto setup the lib overrides
+    [ -z "$ASTRIAL" ] && DDMENDPOINT="$DQ2_LOCAL_SITE_ID" || DDMENDPOINT="$DQ2_LOCAL_SITE_ID_TRIAL"
+    [ -z "$ASTRIAL" ] && DDMENDPOINT="$RUCIO_LOCAL_SITE_ID" || DDMENDPOINT="$RUCIO_LOCAL_SITE_ID_TRIAL"
+    [ -n "$ASDEBUG" ] && echo "$VO_ATLAS_SW_DIR/local/bin/$SITOOL -S -s $LOCAL_SITE_NAME -e $DDMENDPOINT $ASDEBUG_OPT"
+    SETYPE="`$VO_ATLAS_SW_DIR/local/bin/$SITOOL -S -s $LOCAL_SITE_NAME -e $DDMENDPOINT $ASDEBUG_OPT | tr A-Z a-z`"
+    [ -z "$SETYPE" ] && SETYPE="unknown"
+    if [ "$SETYPE" == "dcache" ] ; then
+        [ -n "$ASVERBOSE" ] && echo "Setting up dcache"
+        [ -z "$ASTRIAL" ] && setup_dcache
+    elif [ "$SETYPE" != "storm" -a "$SETYPE" != "castor" ] ; then
+        [ -n "$ASVERBOSE" ] && echo "Setting up dpm [SETYPE=$SETYPE]"
+        [ -z "$ASTRIAL" ] && setup_dpm
+    elif [ -z "$SETYPE" ] ; then
+        echo "No SE type found for endpoint $DDMENDPOINT"
+        SETYPE="NONE"
+    fi
+    [ -n "$ASTRIAL" ] && echo "AUTO-SETUP> SETYPE=$SETYPE"
+
+    # Fix for US sites
+    [ -n "$OSG_APP" -a -z "$ASTRIAL" ] && export VOMS_PROXY_INFO_DONT_VERIFY_AC="true"
+
+    # Auto setup for nightlies
+    [ -z "$CVMFSBASE" ] &&  export CVMFSBASE="`echo $VO_ATLAS_SW_DIR | sed -e 's/\/atlas.cern.ch\/repo\/sw//'`"
+    [ -z "$VO_ATLAS_NIGHTLIES_DIR" ] && export VO_ATLAS_NIGHTLIES_DIR="$CVMFSBASE/atlas-nightlies.cern.ch/repo/sw/nightlies"
+
+    # Set up ATLASLocalRootBase, if not yet set, useful tor RootCore
+    [ -z "$ATLAS_LOCAL_ROOT_BASE" ] && export ATLAS_LOCAL_ROOT_BASE="$CVMFSBASE/atlas.cern.ch/repo/ATLASLocalRootBase"
+else
+    [ -z "$ASTRIAL" ] && unset FRONTIER_SERVER
+    echo "No Local Site Name defined"
+    rc=1
+fi
+
+# Final cleanup
+unset LOCAL_SITE_NAME ASVERBOSE ASVERSION ASTRIAL ASDEBUG ASDEBUG_OPT ASPANDA_RESOURCE
+
+return $rc

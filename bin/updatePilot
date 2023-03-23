@@ -59,16 +59,16 @@ for PPPATH in `echo $PPPATHS | sed 's/,/ /g'`; do
                 echo "PILOTARCHIVE_PKG=$PILOTARCHIVE_PKG"
                 echo "PILOTARCHIVE_LATEST=$PILOTARCHIVE_LATEST"
                 cd $DEST/$PILOTPKG
-                cp -a latest pilot2
-                tar cfz $PILOTARCHIVE_PKG --exclude=.git --exclude=doc --exclude=.idea --exclude=docs pilot2
-                rm -fr pilot2
+                cp -a latest $PILOTPKG
+                tar cfz $PILOTARCHIVE_PKG --exclude=.git --exclude=doc --exclude=.idea --exclude=docs $PILOTPKG
+                rm -fr $PILOTPKG
                 cd -
             fi
             # Switch the link to the latest package
-            if [ $? -eq 0 -a -s $PILOTARCHIVE_PKG ] ; then
-                [ -L $PILOTARCHIVE_LATEST ] && rm -f $PILOTARCHIVE_LATEST
-                ln -s  `basename $PILOTARCHIVE_PKG` $PILOTARCHIVE_LATEST
-            fi
+            #if [ $? -eq 0 -a -s $PILOTARCHIVE_PKG ] ; then
+            #    [ -L $PILOTARCHIVE_LATEST ] && rm -f $PILOTARCHIVE_LATEST
+            #    ln -s  `basename $PILOTARCHIVE_PKG` $PILOTARCHIVE_LATEST
+            #fi
             cp -f $DEST/$PILOTPKG/latest/PILOTVERSION $DEST/$PILOTPKG/tag
             PILOTVERSION="`cat $DEST/$PILOTPKG/latest/PILOTVERSION | awk '{print $NF}'`"
             [ ! -d "$DEST/$PILOTPKG/$PILOTVERSION" ] && cp -a $DEST/$PILOTPKG/latest $DEST/$PILOTPKG/$PILOTVERSION
@@ -99,22 +99,39 @@ for PPPATH in `echo $PPPATHS | sed 's/,/ /g'`; do
                     echo "PILOTARCHIVE_PKG=$PILOTARCHIVE_PKG"
                     echo "PILOTARCHIVE_LATEST=$PILOTARCHIVE_LATEST"
                     cd $DEST/$PILOTPKG
-                    cp -a latest pilot2
-                    tar cfz $PILOTARCHIVE_PKG --exclude=.git --exclude=doc --exclude=.idea --exclude=docs pilot2
-                    rm -fr pilot2
+                    cp -a latest $PILOTPKG
+                    tar cfz $PILOTARCHIVE_PKG --exclude=.git --exclude=doc --exclude=.idea --exclude=docs $PILOTPKG
+                    rm -fr $PILOTPKG
                     cd -
                 fi
                 # Switch the link to the latest package
-                if [ $? -eq 0 -a -s $PILOTARCHIVE_PKG ] ; then
-                    [ -L $PILOTARCHIVE_LATEST ] && rm -f $PILOTARCHIVE_LATEST
-                    ln -s  `basename $PILOTARCHIVE_PKG` $PILOTARCHIVE_LATEST
-                fi
+                #if [ $? -eq 0 -a -s $PILOTARCHIVE_PKG ] ; then
+                #    [ -L $PILOTARCHIVE_LATEST ] && rm -f $PILOTARCHIVE_LATEST
+                #    ln -s  `basename $PILOTARCHIVE_PKG` $PILOTARCHIVE_LATEST
+                #fi
                 cp -f $DEST/$PILOTPKG/latest/PILOTVERSION $DEST/$PILOTPKG/tag
                 PILOTVERSION="`cat $DEST/$PILOTPKG/latest/PILOTVERSION | awk '{print $NF}'`"
                 [ ! -d "$DEST/$PILOTPKG/$PILOTVERSION" ] && cp -a $DEST/$PILOTPKG/latest $DEST/$PILOTPKG/$PILOTVERSION
                 echo "	* + PandaPilot `cat $DEST/$PILOTPKG/latest/PILOTVERSION`" >> $TRANSACTION
                 let rc=$rc+$currrc
             fi
+        fi
+    fi
+    if [ "$PILOTPKG" == "pilot3" ] ; then
+        PILOTARCHIVE_LATEST=$DEST/$PILOTARCHIVE/${PILOTPKG}.tar.gz
+        echo "$PILOTARCHIVE_LATEST currently points to `readlink $PILOTARCHIVE_LATEST`"
+        PILOTARCHIVE_LATEST_NEW="$DEST/$PILOTARCHIVE/${PILOTPKG}-`curl -s http://pandaserver.cern.ch:25085/cache/schedconfig/ALL.all.json 2>/dev/null | jq .params.pilot_version | sed 's/\"//g'`.tar.gz"
+        if [ -s $PILOTARCHIVE_LATEST_NEW ] ; then
+            if [ "`readlink $PILOTARCHIVE_LATEST`" != "`basename $PILOTARCHIVE_LATEST_NEW`" ] ; then
+                echo "Switching $PILOTARCHIVE_LATEST to `basename $PILOTARCHIVE_LATEST_NEW`"
+                rm -f $PILOTARCHIVE_LATEST
+                ln -s  `basename $PILOTARCHIVE_LATEST_NEW` $PILOTARCHIVE_LATEST
+                echo "	* + PandaPilot linked to `basename $PILOTARCHIVE_LATEST_NEW`" >> $TRANSACTION
+            else
+                echo "$PILOTARCHIVE_LATEST already pointing to the latest version `basename $PILOTARCHIVE_LATEST_NEW`"
+            fi
+        else
+            echo "No package ${PILOTARCHIVE_LATEST_NEW}, please check the Panda Schedconfig parameters"
         fi
     fi
 done
