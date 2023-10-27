@@ -172,6 +172,9 @@ if [ ! -d `dirname $MGDST` ] ; then
     git clone $MGSRC $MGDST
     currrc=$?
     [ $currrc -eq 0 ] && touch ${MGDST}/.cvmfscatalog
+    # Create the necessary links
+    cd $MGDST
+    source ./setup.sh
 else
     cd $MGDST
     git fetch
@@ -181,6 +184,8 @@ else
         git pull
         currrc=$?
     fi
+    # Create the necessary links
+    source ./setup.sh
 fi
 if [ $currrc -eq 0 ] ; then
     TSTAMP="`date +%Y%m%d%H%M`"

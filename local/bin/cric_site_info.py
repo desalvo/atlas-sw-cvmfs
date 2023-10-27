@@ -2,10 +2,10 @@
 #####################################################################
 # CRIC site info tool                                               #
 # LJSFi Framework 2.1.0                                             #
-# Alessandro De Salvo <Alessandro.DeSalvo@roma1.infn.it> - 20200901 #
+# Alessandro De Salvo <Alessandro.DeSalvo@roma1.infn.it> - 20231018 #
 #####################################################################
 
-__version__ = "$Revision: 1.1 $"[11:-1]
+__version__ = "$Revision: 1.2 $"[11:-1]
 
 __HELP__="""CRIC site info tool %s.
 Usage: cric-site-info [OPTION]
@@ -67,15 +67,18 @@ __BPROXY_MAP__ = {
                        "in2p3.fr": "http://atlasbpfrontier.cern.ch:3127",
                      }
 __DEFAULT_BPROXIES__ = ["http://atlasbpfrontier.cern.ch:3127","http://atlasbpfrontier.fnal.gov:3127"]
+__PROXY_DEFAULT_AUTOCONFIG__ = "(serverurl=http://atlascern-frontier.openhtc.io:8080/atlr)(serverurl=http://atlascern1-frontier.openhtc.io:8080/atlr)(serverurl=http://atlascern2-frontier.openhtc.io:8080/atlr)(serverurl=http://atlascern3-frontier.openhtc.io:8080/atlr)(serverurl=http://atlascern4-frontier.openhtc.io:8080/atlr)(proxyconfigurl=http://grid-wpad/wpad.dat)(proxyconfigurl=http://lhchomeproxy.cern.ch/wpad.dat)(proxyconfigurl=http://lhchomeproxy.fnal.gov/wpad.dat)"
 
 if ("VO_ATLAS_SW_DIR" in os.environ):
     __DEFAULT_CRIC_SITE_INFO__ = "%s/local/etc/cric_sites.json" % os.environ["VO_ATLAS_SW_DIR"]
     __CRIC_STATIC_SITE_INFO__ = "%s/local/etc/cric_static_site_info.json" % os.environ["VO_ATLAS_SW_DIR"]
+    __CRIC_OVERRIDE_SITE_INFO__ = "%s/local/etc/cric_override_sites.json" % os.environ["VO_ATLAS_SW_DIR"]
     __CRIC_SCHEDCONF__ = "%s/local/etc/cric_pandaqueues.json" % os.environ["VO_ATLAS_SW_DIR"]
 else:
     #sys.stderr.write("No VO_ATLAS_SW_DIR set, using /cvmfs/atlas.cern.ch/repo/sw\n")
     __DEFAULT_CRIC_SITE_INFO__ = "/cvmfs/atlas.cern.ch/repo/sw/local/etc/cric_sites.json"
     __CRIC_STATIC_SITE_INFO__ = "/cvmfs/atlas.cern.ch/repo/sw/local/etc/cric_static_sites.json"
+    __CRIC_OVERRIDE_SITE_INFO__ = "/cvmfs/atlas.cern.ch/repo/sw/local/etc/cric_override_sites.json"
     __CRIC_SCHEDCONF__ = "/cvmfs/atlas.cern.ch/repo/sw/local/etc/cric_pandaqueues.json"
 
 short_options = "c:de:hfiI:j:m:n:pPq:Ss:"
@@ -105,6 +108,8 @@ class cricSiteInfo:
         json_site_data = None
 
         if (os.path.exists(__DEFAULT_CRIC_SITE_INFO__)):
+            #st = os.stat(__DEFAULT_CRIC_SITE_INFO__)
+            #sys.stderr.write("Size of cache file %s is %d\n" % (__DEFAULT_CRIC_SITE_INFO__,st.st_size))
             try:
                 asinfo = __DEFAULT_CRIC_SITE_INFO__
                 if (self.debug): sys.stderr.write("Reading CRIC site data from %s\n" % asinfo)
@@ -166,9 +171,10 @@ class cricSiteInfo:
                 except:
                     json_site_data = None
 
+        # Static site info
         if (os.path.exists(__CRIC_STATIC_SITE_INFO__)): assinfo = __CRIC_STATIC_SITE_INFO__
         elif (os.path.exists(os.path.basename(__CRIC_STATIC_SITE_INFO__))): assinfo = os.path.basename(__CRIC_STATIC_SITE_INFO__)
-        elif (os.path.exists("~/.%s" % os.path.basename(__CRIC_STATIC_SITE_INFO__))): assinfo = "~/.%s" % os.path.basename(__CRIC_STATIC_SITE_INFO__)
+        elif (os.path.exists(os.path.expanduser("~/.%s" % os.path.basename(__CRIC_STATIC_SITE_INFO__)))): assinfo = os.path.expanduser("~/.%s" % os.path.basename(__CRIC_STATIC_SITE_INFO__))
 
         if (assinfo):
             try:
@@ -195,6 +201,34 @@ class cricSiteInfo:
         if (cric_static_site_data): cric_site_data = cric_static_site_data + cric_site_data
 
         return cric_site_data
+
+    def getCricDataOverrides(self,site=None):
+        # Get the json extra data from an override file
+        ovrinfo = None
+        cric_site_data = {}
+        cric_override_site_data = []
+
+        # Override site info
+        if (os.path.exists(__CRIC_OVERRIDE_SITE_INFO__)): ovrinfo = __CRIC_OVERRIDE_SITE_INFO__
+        elif (os.path.exists(os.path.basename(__CRIC_OVERRIDE_SITE_INFO__))): ovrinfo = os.path.basename(__CRIC_OVERRIDE_SITE_INFO__)
+        elif (os.path.exists(os.path.expanduser("~/.%s" % os.path.basename(__CRIC_OVERRIDE_SITE_INFO__)))): ovrinfo = os.path.expanduser("~/.%s" % os.path.basename(__CRIC_OVERRIDE_SITE_INFO__))
+
+        if (ovrinfo):
+            try:
+                cric_site_info = open(ovrinfo,'r')
+                json_site_data = cric_site_info.read()
+                cric_site_info.close()
+                if (self.debug): sys.stderr.write("Loading CRIC override data from %s\n" % ovrinfo)
+                cric_site_data = json.loads(json_site_data)
+                if (self.debug): sys.stderr.write("CRIC override site data loaded from %s\n" % ovrinfo)
+            except:
+                cric_site_data = []
+                sys.stderr.write("Cannot read CRIC override site info\n")
+
+        if (site and site in cric_site_data.keys()):
+            cric_override_site_data = cric_site_data[site]
+
+        return cric_override_site_data
 
     def getCricSchedconf(self,pandares=None):
         # Get the json files from CRIC
@@ -235,55 +269,62 @@ class cricSiteInfo:
         for site_name in cric_site_data.keys():
             if (site_name == site):
                 site_data = cric_site_data[site_name]
+                site_data_overrides = self.getCricDataOverrides(site)
                 bproxy_map = []
                 has_proxyconfig = None
                 if (force_proxyconfig): has_proxyconfig = True
+                elif ("has_proxyconfig" in site_data_overrides): has_proxyconfig = site_data_overrides["has_proxyconfig"]
                 elif ("has_proxyconfig" in site_data): has_proxyconfig = site_data["has_proxyconfig"]
                 if (self.debug): sys.stderr.write("Proxyconfig for site %s is %s\n" % (site, has_proxyconfig))
-                if ("fsconf" in site_data):
-                    fsconfdata = site_data["fsconf"]
-                    if ("frontier" in fsconfdata):
-                        # Count all items
-                        fs_num = {}
-                        tot_fs_num = 0
-                        for fserv in fsconfdata["frontier"]:
-                            fs_num[fserv[0]] = 1
-                            if (len(fserv) == 2): fs_num[fserv[0]] += len(fserv[1])
-                            tot_fs_num += fs_num[fserv[0]]
-                        if (tot_fs_num > maxserv):
-                            factor = float(maxserv) / float(tot_fs_num)
-                            tot_fs_num = 0
-                            for dom in fs_num.keys():
-                                if (tot_fs_num < maxserv):
-                                    fs_num[dom] = int(factor * fs_num[dom]) + 1
-                                    if (tot_fs_num + fs_num[dom] > maxserv): fs_num[dom] = maxserv - tot_fs_num
-                                    tot_fs_num += fs_num[dom]
-                        for fserv in fsconfdata["frontier"]:
-                            try:
-                                if (fserv_patt.match(fserv[0])):
-                                    fdomain = fserv_patt.match(fserv[0]).group(2)
-                                    if (__BPROXY_MAP__[fdomain] not in bproxy_map):
-                                        bproxy_map.append(__BPROXY_MAP__[fdomain])
-                            except:
-                                bproxy_map = __DEFAULT_BPROXIES__
-                            fsconf += "(serverurl=%s)" % fserv[0]
-                            if (len(fserv) == 2):
-                                ns = 1
-                                if ("iteritems" in dir(fserv[1])):
-                                    # Python 2
-                                    fserv_info = fserv[1].iteritems()
-                                else:
-                                    # Python 3
-                                    fserv_info = fserv[1].items()
-                                for node,status in fserv_info:
-                                    if (status == 'ACTIVE' and ns < fs_num[fserv[0]]):
-                                        fsconf += "(serverurl=%s)" % node
-                                        ns += 1
-                                    else:
-                                        if (self.debug): sys.stderr.write("SKIP serverurl %s" % node)
-                    if (has_proxyconfig):
-                        fsconf += "(proxyconfigurl=http://grid-wpad/wpad.dat)"
+                if (has_proxyconfig):
+                    if (site_data_overrides and "fsconf" in site_data_overrides and "proxyconfig" in site_data_overrides["fsconf"]):
+                      fsconf = "%s" % site_data_overrides["fsconf"]["proxyconfig"]
+                    elif ("fsconf" in site_data and "proxyconfig" in site_data["fsconf"]):
+                      fsconf = "%s" % site_data["fsconf"]["proxyconfig"]
                     else:
+                      fsconf = __PROXY_DEFAULT_AUTOCONFIG__
+                else:
+                    if ("fsconf" in site_data):
+                        fsconfdata = site_data["fsconf"]
+                        if ("frontier" in fsconfdata):
+                            # Count all items
+                            fs_num = {}
+                            tot_fs_num = 0
+                            for fserv in fsconfdata["frontier"]:
+                                fs_num[fserv[0]] = 1
+                                if (len(fserv) == 2): fs_num[fserv[0]] += len(fserv[1])
+                                tot_fs_num += fs_num[fserv[0]]
+                            if (tot_fs_num > maxserv):
+                                factor = float(maxserv) / float(tot_fs_num)
+                                tot_fs_num = 0
+                                for dom in fs_num.keys():
+                                    if (tot_fs_num < maxserv):
+                                        fs_num[dom] = int(factor * fs_num[dom]) + 1
+                                        if (tot_fs_num + fs_num[dom] > maxserv): fs_num[dom] = maxserv - tot_fs_num
+                                        tot_fs_num += fs_num[dom]
+                            for fserv in fsconfdata["frontier"]:
+                                try:
+                                    if (fserv_patt.match(fserv[0])):
+                                        fdomain = fserv_patt.match(fserv[0]).group(2)
+                                        if (__BPROXY_MAP__[fdomain] not in bproxy_map):
+                                            bproxy_map.append(__BPROXY_MAP__[fdomain])
+                                except:
+                                    bproxy_map = __DEFAULT_BPROXIES__
+                                fsconf += "(serverurl=%s)" % fserv[0]
+                                if (len(fserv) == 2):
+                                    ns = 1
+                                    if ("iteritems" in dir(fserv[1])):
+                                        # Python 2
+                                        fserv_info = fserv[1].iteritems()
+                                    else:
+                                        # Python 3
+                                        fserv_info = fserv[1].items()
+                                    for node,status in fserv_info:
+                                        if (status == 'ACTIVE' and ns < fs_num[fserv[0]]):
+                                            fsconf += "(serverurl=%s)" % node
+                                            ns += 1
+                                        else:
+                                            if (self.debug): sys.stderr.write("SKIP serverurl %s" % node)
                         if ("squid" in fsconfdata):
                             for fsquid in fsconfdata["squid"]:
                                 fsconf += "(proxyurl=%s)" % fsquid[0]
@@ -296,16 +337,20 @@ class cricSiteInfo:
                                         fsquid_info = fsquid[1].items()
                                     for node,status in fsquid_info:
                                         if (status == 'ACTIVE'): fsconf += "(proxyurl=%s)" % node
-                    if (fsconf and bproxy_map):
-                        bproxies = ""
-                        for bproxy in bproxy_map:
-                            bproxies += "(proxyurl=%s)" % bproxy
-                        if (len(bproxy_map) < 2):
-                            for bproxy in __DEFAULT_BPROXIES__:
-                                if (bproxy not in bproxy_map):
-                                    bproxies += "(proxyurl=%s)" % bproxy
-                        fsconf += bproxies
-                        break
+                        if (site_data_overrides and "preferipfamily" in site_data_overrides["fsconf"]):
+                            fsconf += "(preferipfamily=%s)" % site_data_overrides["fsconf"]["preferipfamily"]
+                        elif ("preferipfamily" in fsconfdata):
+                            fsconf += "(preferipfamily=%s)" % fsconfdata["preferipfamily"]
+                        if (fsconf and bproxy_map):
+                            bproxies = ""
+                            for bproxy in bproxy_map:
+                                bproxies += "(proxyurl=%s)" % bproxy
+                            if (len(bproxy_map) < 2):
+                                for bproxy in __DEFAULT_BPROXIES__:
+                                    if (bproxy not in bproxy_map):
+                                        bproxies += "(proxyurl=%s)" % bproxy
+                            fsconf += bproxies
+                            break
         return fsconf
 
     def getSiteName(self, pandares=None):

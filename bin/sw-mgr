@@ -1,6 +1,6 @@
 #!/bin/bash
 
-VERSION="sw-mgr v0.263.1 - 20230323"
+VERSION="sw-mgr v0.266.1 - 20231020"
 help() {
     cat <<EOD
 Usage: `basename $0` [OPTION]
@@ -1802,7 +1802,7 @@ install() {
             if [ -z "`which ayum 2>/dev/null`" ] ; then
                 export PATH=$AYUM_DIR/bin:$PATH
             fi
-            AYUM_ARCH="`echo $ARCH | sed -E 's/^_+(i686|x86_64|aarch64).(slc[0-9]*|centos[0-9]*).(gcc[0-9]{1,2}).*/\1-\2-\3/'`-$PRJOPT"
+            AYUM_ARCH="`echo $ARCH | sed -E 's/^_+(i686|x86_64|aarch64).(slc[0-9]*|centos[0-9]*|el[0-9]*).(gcc[0-9]{1,2}).*/\1-\2-\3/'`-$PRJOPT"
             AYUM_REL="${PRJNAME}"
             [ -z "$NOVERSION" ] && AYUM_REL="${AYUM_REL}_${RELEASE}_${AYUM_ARCH}"
             msgOut INFO "Installing ${AYUM_REL}"
@@ -5129,7 +5129,10 @@ setupAyum() {
     mv -f yum.conf.fixed yum.conf
 
     # Repo arch
-    AYUM_REPO_ARCH="`echo $ARCH | sed -E 's/^_+(i686|x86_64|aarch64).(slc[0-9]*|cc[0-9]*|centos[7-9]*).(gcc[0-9]+)/\1/'`"
+    AYUM_REPO_ARCH="`echo $ARCH | sed -E 's/^_+(i686|x86_64|aarch64).(slc[0-9]*|cc[0-9]*|centos[7-9]*|el[0-9]*).(gcc[0-9]+)/\1/'`"
+
+    # elversion
+    AYUM_ELVERSION="`echo $ARCH | sed -E 's/^_+(i686|x86_64|aarch64).(slc|cc|centos|el)([0-9]*).(gcc[0-9]+)/\3/'`"
 
     # Configure the ayum repositories:
     cat - >./etc/yum.repos.d/lcg.repo <<EOF
@@ -5154,6 +5157,12 @@ EOF
 name=LCG Packages Repository
 #baseurl=http://lcgpackages.web.cern.ch/lcg/repo/7/\$basearch/Packages
 baseurl=http://lcgpackages.web.cern.ch/lcg/repo/7/$AYUM_REPO_ARCH/Packages
+prefix=${RELLOC}/sw/lcg/releases
+enabled=1
+
+[lcg-c9-repo]
+name=LCG Packages Repository
+baseurl=http://lcgpackages.web.cern.ch/lcg/repo/9/$AYUM_REPO_ARCH/Packages
 prefix=${RELLOC}/sw/lcg/releases
 enabled=1
 EOF
@@ -5190,7 +5199,14 @@ EOF
     cat - >./etc/yum.repos.d/lcg102.repo <<EOF
 [lcg-102-repo]
 name=LCG 102 Repository
-baseurl=http://cern.ch/lcgpackages/lcg/repo/7/${AYUM_REPO_ARCH}/LCG_102
+baseurl=http://cern.ch/lcgpackages/lcg/repo/${AYUM_ELVERSION}/${AYUM_REPO_ARCH}/LCG_102
+prefix=${RELLOC}/sw/lcg/releases
+enabled=1
+EOF
+    cat - >./etc/yum.repos.d/lcg104b.repo <<EOF
+[lcg-104-repo]
+name=LCG 104 Repository
+baseurl=http://cern.ch/lcgpackages/lcg/repo/${AYUM_ELVERSION}/${AYUM_REPO_ARCH}/LCG_104
 prefix=${RELLOC}/sw/lcg/releases
 enabled=1
 EOF
@@ -5204,6 +5220,12 @@ enabled=1
 [lcg-contrib-centos7]
 name=LCG Contrib centos7
 baseurl=https://lcgpackages.web.cern.ch/lcg/contrib/7
+prefix=${RELLOC}/sw/lcg/releases
+enabled=1
+
+[lcg-contrib-el9]
+name=LCG Contrib el9
+baseurl=https://lcgpackages.web.cern.ch/lcg/contrib/9
 prefix=${RELLOC}/sw/lcg/releases
 enabled=1
 EOF
@@ -5234,6 +5256,36 @@ enabled=1
 [tdaq-centos7]
 name=TDAQ releases (centos7)
 baseurl=http://atlas-tdaq-sw.web.cern.ch/atlas-tdaq-sw/yum/tdaq/centos7
+enabled=1
+EOF
+
+    cat - >./etc/yum.repos.d/tdaq-centos9.repo <<EOF
+[tdaq-common-centos9]
+name=tdaq-common (centos9)
+baseurl=http://atlas-tdaq-sw.web.cern.ch/atlas-tdaq-sw/yum/tdaq-common/centos9
+enabled=1
+[dqm-common-centos9]
+name=dqm-common (centos9)
+baseurl=http://atlas-tdaq-sw.web.cern.ch/atlas-tdaq-sw/yum/dqm-common/centos9
+enabled=0
+[tdaq-centos9]
+name=TDAQ releases (centos9)
+baseurl=http://atlas-tdaq-sw.web.cern.ch/atlas-tdaq-sw/yum/tdaq/centos9
+enabled=1
+EOF
+
+    cat - >./etc/yum.repos.d/tdaq-el9.repo <<EOF
+[tdaq-common-el9]
+name=tdaq-common (el9)
+baseurl=http://atlas-tdaq-sw.web.cern.ch/atlas-tdaq-sw/yum/tdaq-common/el9
+enabled=1
+[dqm-common-el9]
+name=dqm-common (el9)
+baseurl=http://atlas-tdaq-sw.web.cern.ch/atlas-tdaq-sw/yum/dqm-common/el9
+enabled=0
+[tdaq-el9]
+name=TDAQ releases (el9)
+baseurl=http://atlas-tdaq-sw.web.cern.ch/atlas-tdaq-sw/yum/tdaq/el9
 enabled=1
 EOF
 
@@ -5272,8 +5324,6 @@ enabled=1
 name=ATLAS release 23.6
 baseurl=http://cern.ch/atlas-software-dist-eos/RPMs/releases/23.6
 enabled=1
-
-[atlas-release-22.6]
 
 [atlas-release-22.6]
 name=ATLAS release 22.6
@@ -5329,6 +5379,11 @@ enabled=1
 [atlas-release-0.1]
 name=ATLAS release 0.1
 baseurl=http://cern.ch/atlas-software-dist-eos/RPMs/releases/0.1
+enabled=1
+
+[atlas-release-0.2]
+name=ATLAS release 0.2
+baseurl=http://cern.ch/atlas-software-dist-eos/RPMs/releases/0.2
 enabled=1
 EOF
 

@@ -1,0 +1,35 @@
+README: cric_override_sites.json
+Alessandro.DeSalvo@roma1.infn.it
+================================
+
+The main purpose of this override file is to override or add parameters to site configs, mainly for Frontier.
+the syntax is the following:
+
+{
+   "<sitename>": {
+     "<override_param_name>": {
+       ...<param data to override>...
+     }
+}
+
+Currently the overridable params are:
+- has_proxyconfig
+- fsconf.preferipfamily
+- fsconf.proxyconfig
+
+Here it is an example of how to set different overrides for 2 sites:
+
+{
+   "INFN-ROMA1": {
+     "has_proxyconfig": true,
+     "fsconf": {
+       "preferipfamily": 4,
+       "proxyconfig": "(proxyurl=http://squid.example.com)"
+     }
+   },
+   "FZK-LCG2": {
+     "fsconf": {
+       "preferipfamily": 6
+     }
+   }
+}
