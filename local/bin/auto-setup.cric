@@ -103,7 +103,7 @@ done
 if [ -n "$ASPANDA_RESOURCE" ] ; then
     LOCAL_SITE_NAME="`$VO_ATLAS_SW_DIR/local/bin/$SITOOL -n $ASPANDA_RESOURCE`"
     # Publish the site info
-    $VO_ATLAS_SW_DIR/local/bin/publish-site-info $ASPANDA_RESOURCE
+    #$VO_ATLAS_SW_DIR/local/bin/publish-site-info $ASPANDA_RESOURCE
 elif [ -n "$CUSTOM_SITE_NAME" ] ; then
     LOCAL_SITE_NAME="$CUSTOM_SITE_NAME"
     unset CUSTOM_SITE_NAME
