@@ -1,6 +1,6 @@
 #!/bin/bash
 
-VERSION="sw-mgr v0.266.1 - 20231020"
+VERSION="sw-mgr v0.267.1 - 20240108"
 help() {
     cat <<EOD
 Usage: `basename $0` [OPTION]
@@ -5305,6 +5305,16 @@ name=ATLAS offline releases CentOS7
 baseurl=http://cern.ch/atlas-software-dist-eos/RPMs/releases/centos7
 enabled=1
 
+[atlas-release-25.0]
+name=ATLAS release 25.0
+baseurl=http://atlas-software-dist-eos.web.cern.ch/RPMs/releases/25.0
+enabled=1
+
+[atlas-release-25.2]
+name=ATLAS release 25.2
+baseurl=http://atlas-software-dist-eos.web.cern.ch/RPMs/releases/25.2
+enabled=1
+
 [atlas-release-24.0]
 name=ATLAS release 24.0
 baseurl=http://cern.ch/atlas-software-dist-eos/RPMs/releases/24.0
@@ -5384,6 +5394,11 @@ enabled=1
 [atlas-release-0.2]
 name=ATLAS release 0.2
 baseurl=http://cern.ch/atlas-software-dist-eos/RPMs/releases/0.2
+enabled=1
+
+[atlas-release-0.3]
+name=ATLAS release 0.3
+baseurl=http://cern.ch/atlas-software-dist-eos/RPMs/releases/0.3
 enabled=1
 EOF
 
