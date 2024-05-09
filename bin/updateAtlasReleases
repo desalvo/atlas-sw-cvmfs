@@ -66,7 +66,7 @@ if [ -s "$INSTCONF" ] ; then
     SWMGR="`grep -i ^sw-mgr= $INSTCONF | cut -d= -f 2`"
     CHANGELOG="`grep -i ^ChangeLog= $INSTCONF | cut -d= -f 2`"
     USERNAME="`grep -i ^UserName= $INSTCONF | cut -d= -f 2`"
-    MAILTO="`grep -i ^MailTo= $INSTCONF | cut -d= -f 2`"
+    MAILTO="`grep -i ^MailTo= $INSTCONF | cut -d= -f 2 | tr ',' ' '`"
 fi
 
 OPTS=`getopt -o acdfhr:p:Rs:tT:u: -l all-autoinstall,all-cvmfs,dbarea:,debug,force,help,ignore-install-errs,install-opts:,max-installs:,nodb,path:,platform:,project-type:,skip-dbrelease,release:,remove,server:,template:,trial,user: -- "$@"` 
@@ -243,6 +243,8 @@ if [ -s $TMPRELLIST ] ; then
                 [ ! -d $CVMFS_CATALOG_PATH ] && mkdir -p $CVMFS_CATALOG_PATH
                 [ ! -f $CVMFS_CATALOG_PATH/.cvmfscatalog ] && touch $CVMFS_CATALOG_PATH/.cvmfscatalog
                 if [ $instrc -eq 0 ] ; then
+                    # Remove tdaq for releases >= 22
+                    rm -fr $VO_ATLAS_SW_DIR/software/2[2-9].0/{dqm-common,tdaq-common,tdaq}
                     if [ -z "`eval grep ^${RELTAG}$ $TAGSFILE`" ] ; then
                         if [ $? -eq 0 ] ; then
                             set -o noclobber
@@ -385,7 +387,7 @@ if [ $allrc -eq 0 ] ; then
     if [ -n "$CVMFSPUBLISH" -a -s $TRANSACTION ] ; then
         $CVMFSPUBLISH
         if [ -n "$MAILTO" ] ; then
-            mail -s "[ATLAS CVMFS UPDATE] `hostname`" "$MAILTO" <<EOD
+            mail -s "[ATLAS CVMFS UPDATE] `hostname`" $MAILTO <<EOD
 Dear admin,
 the following releases have been installed in CVMFS @ `hostname`
   
@@ -403,7 +405,7 @@ EOD
     $HOME/bin/unlock-install
 else
     if [ -n "$MAILTO" ] ; then
-        mail -s "[ATLAS CVMFS ERROR] `hostname`" "$MAILTO" <<EOD
+        mail -s "[ATLAS CVMFS ERROR] `hostname`" $MAILTO <<EOD
 Dear admin,
 an updateAtlasRelease job failed to run on `hostname`
 Regards,

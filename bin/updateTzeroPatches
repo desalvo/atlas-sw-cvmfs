@@ -13,8 +13,8 @@ if [ -s "$INSTCONF" ] ; then
     CVMFSTRANSACTION="`grep -i ^cvmfs_transaction= $INSTCONF | cut -d= -f 2`"
     CVMFSABORT="`grep -i ^cvmfs_abort= $INSTCONF | cut -d= -f 2`"
     CVMFSPUBLISH="`grep -i ^cvmfs_publish= $INSTCONF | cut -d= -f 2`"
-    MAILTO="`grep -i ^MailTo= $INSTCONF | cut -d= -f 2`"
-    TZEROMAILTO="`grep -i ^TzeroMailTo= $INSTCONF | cut -d= -f 2`"
+    MAILTO="`grep -i ^MailTo= $INSTCONF | cut -d= -f 2 | tr ',' ' '`"
+    TZEROMAILTO="`grep -i ^TzeroMailTo= $INSTCONF | cut -d= -f 2 | tr ',' ' '`"
 fi
 
 TRANSACTION=/tmp/tmp.transaction.$$
@@ -52,7 +52,7 @@ if [ -n "$SRCDATE" -a -n "$DESTDATE" -a $SRCDATE -gt $DESTDATE ] ; then
         if [ -n "$MAILTO" ] ; then
             [ -n "$TZEROMAILTO" ] && MAILTO="${MAILTO},${TZEROMAILTO}"
             echo "Sending notification"
-            mail -s "[ATLAS CVMFS UPDATE] `hostname`" "$MAILTO" <<EOD
+            mail -s "[ATLAS CVMFS UPDATE] `hostname`" $MAILTO <<EOD
 Dear admin,
 the following software has been installed in CVMFS @ `hostname`
 
@@ -67,7 +67,7 @@ EOD
         [ -n "$CVMFSABORT" ] && $CVMFSABORT
         if [ -n "$MAILTO" ] ; then
             echo "Sending notification"
-            mail -s "[ATLAS CVMFS ERROR] `hostname`" "$MAILTO" <<EOD
+            mail -s "[ATLAS CVMFS ERROR] `hostname`" $MAILTO <<EOD
 Dear admin,
 the Tzero Patches $SRCDATE failed to install in CVMFS.
 Last error:

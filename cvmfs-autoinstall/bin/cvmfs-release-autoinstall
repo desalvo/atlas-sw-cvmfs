@@ -25,6 +25,7 @@ EOD
 
 # Global defaults
 AISERVER="atlas-install.roma1.infn.it"
+FORCE=1
 
 # Configuration scripts
 [ -f "$PWD/.arelinstrc" ] && INSTCONF="$PWD/.arelinstrc"
@@ -32,7 +33,7 @@ AISERVER="atlas-install.roma1.infn.it"
 
 if [ -s "$INSTCONF" ] ; then
     AISERVER="`grep -i ^AtlasInstallServer= $INSTCONF | cut -d= -f 2`"
-    MAILTO="`grep -i ^MailTo= $INSTCONF | cut -d= -f 2`"
+    MAILTO="`grep -i ^MailTo= $INSTCONF | cut -d= -f 2 | tr ',' ' '`"
 fi
 
 OPTS=`getopt -o c:dfhn:Rr:s: -l cmtconfig:,debug,force,help,name:,rebuilddb,release:,server: -- "$@"`
@@ -61,8 +62,8 @@ if [ -s $HOME/cvmfs-autoinstall/private/proxy ] ; then
     X509_USER_CERT=$HOME/cvmfs-autoinstall/private/proxy
     X509_USER_KEY=$HOME/cvmfs-autoinstall/private/proxy
 elif [ -s /etc/pki/tls/certs/${HSNAME}.pem -a -s /etc/pki/tls/private/${HSNAME}.key ] ; then
-    X509_USER_CERT=/etc/pki/tls/certs/lxcvmfs130.cern.ch.pem
-    X509_USER_KEY=/etc/pki/tls/private/lxcvmfs130.cern.ch.key
+    X509_USER_CERT=/etc/pki/tls/certs/lxcvmfs169.cern.ch.pem
+    X509_USER_KEY=/etc/pki/tls/private/lxcvmfs169.cern.ch.key
 else
     echo "No certificate or proxy available"
     exit 1
@@ -86,7 +87,7 @@ TESTNAME=${SWNAME}-${MAJREL}-${CMTCONFIG}
 if [ ! -s $HOME/cvmfs-autoinstall/templates/$TEMPLATE ] ; then
     echo "No template $TEMPLATE found in $HOME/cvmfs-autoinstall/templates"
     if [ -n "$MAILTO" ] ; then
-        mail -s "[ATLAS CVMFS AUTOINSTALL ERROR] `hostname`" "$MAILTO" <<EOD
+        mail -s "[ATLAS CVMFS AUTOINSTALL ERROR] `hostname`" $MAILTO <<EOD
 Dear admin,
 the following template is missing from the configuration and has been requested from CVMFS @ `hostname`
   
@@ -136,7 +137,7 @@ RELNAME="`grep ^reldef_name $TMPRELDEF | cut -d= -f 2-`"
 if [ -z "$RELNAME" ] ; then
     echo "Cannot determine the release name"
     if [ -n "$MAILTO" ] ; then
-        mail -s "[ATLAS CVMFS AUTOINSTALL ERROR] `hostname`" "$MAILTO" <<EOD
+        mail -s "[ATLAS CVMFS AUTOINSTALL ERROR] `hostname`" $MAILTO <<EOD
 Dear admin,
 cannot determine the release name from $SWNAME $RELEASE $CMTCONFIG on CVMFS @ `hostname`
 Regards,
@@ -206,9 +207,9 @@ fi
 rm -f $TMPRELDEF
 if [ $rc -eq 0 ] ; then
     if [ -n "$MAILTO" ] ; then
-        mail -s "[ATLAS CVMFS AUTOINSTALL DONE] `hostname`" "$MAILTO" <<EOD
+        mail -s "[ATLAS CVMFS AUTOINSTALL DONE] `hostname`" $MAILTO <<EOD
 Dear admin,
-the following release has been successfully install in CVMFS from `hostname`
+the following release has been successfully installed in CVMFS from `hostname`
 
 $SWNAME $RELEASE $CMTCONFIG
 
@@ -219,7 +220,7 @@ EOD
     fi
 else
     if [ -n "$MAILTO" ] ; then
-        mail -s "[ATLAS CVMFS AUTOINSTALL ERROR] `hostname`" "$MAILTO" <<EOD
+        mail -s "[ATLAS CVMFS AUTOINSTALL ERROR] `hostname`" $MAILTO <<EOD
 Dear admin,
 the following release failed to install in CVMFS from `hostname`
 

@@ -14,7 +14,7 @@ if [ -s "$INSTCONF" ] ; then
     CVMFSTRANSACTION="`grep -i ^cvmfs_transaction= $INSTCONF | cut -d= -f 2`"
     CVMFSABORT="`grep -i ^cvmfs_abort= $INSTCONF | cut -d= -f 2`"
     CVMFSPUBLISH="`grep -i ^cvmfs_publish= $INSTCONF | cut -d= -f 2`"
-    MAILTO="`grep -i ^MailTo= $INSTCONF | cut -d= -f 2`"
+    MAILTO="`grep -i ^MailTo= $INSTCONF | cut -d= -f 2 | tr ',' ' '`"
 fi
 
 TRANSACTION=/tmp/tmp.transaction.$$
@@ -112,7 +112,7 @@ if [ $rc -eq 0 ] ; then
         $CVMFSPUBLISH
         if [ -n "$MAILTO" ] ; then
             echo "Sending notification"
-            mail -s "[ATLAS CVMFS UPDATE] `hostname`" "$MAILTO" <<EOD
+            mail -s "[ATLAS CVMFS UPDATE] `hostname`" $MAILTO <<EOD
 Dear admin,
 the following items have been cleanup up in CVMFS @ `hostname`
 
@@ -130,7 +130,7 @@ else
     [ -n "$CVMFSABORT" ] && $CVMFSABORT
     if [ -n "$MAILTO" ] ; then
         echo "Sending notification"
-        mail -s "[ATLAS CVMFS ERROR] `hostname`" "$MAILTO" <<EOD
+        mail -s "[ATLAS CVMFS ERROR] `hostname`" $MAILTO <<EOD
 Dear admin,
 the GroupData cleanup failed in CVMFS.
 Regards,

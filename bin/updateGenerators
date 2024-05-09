@@ -21,8 +21,8 @@ if [ -s "$INSTCONF" ] ; then
     CVMFSTRANSACTION="`grep -i ^cvmfs_transaction= $INSTCONF | cut -d= -f 2`"
     CVMFSABORT="`grep -i ^cvmfs_abort= $INSTCONF | cut -d= -f 2`"
     CVMFSPUBLISH="`grep -i ^cvmfs_publish= $INSTCONF | cut -d= -f 2`"
-    MAILTO="`grep -i ^MailTo= $INSTCONF | cut -d= -f 2`"
-    MAILTOGEN="`grep -i ^MailToGenerators= $INSTCONF | cut -d= -f 2`"
+    MAILTO="`grep -i ^MailTo= $INSTCONF | cut -d= -f 2 | tr ',' ' '`"
+    MAILTOGEN="`grep -i ^MailToGenerators= $INSTCONF | cut -d= -f 2 | tr ',' ' '`"
     FILEEXCLUDE="`grep -i ^GeneratorsFileExclude= $INSTCONF | cut -d= -f 2`"
     [ -n "$MAILTOGEN" ] && MAILTOALARM="${MAILTO},${MAILTOGEN}" || MAILTOALARM="${MAILTO}"
 fi
@@ -78,7 +78,7 @@ for JO in $JOLIST; do
         if [ $BADDIRS -gt 0 ] ; then
             eval $CVMFSABORT
             if [ -n "$MAILTO" ] ; then
-                mail -s "[ATLAS CVMFS ERROR] `hostname`" "$MAILTO" <<EOD
+                mail -s "[ATLAS CVMFS ERROR] `hostname`" $MAILTO <<EOD
 Dear admin,
 the following releases failed to install in CVMFS @ `hostname` due to a bad checkout
 
@@ -138,7 +138,7 @@ echo "JORC=$rc"
 #    if [ $BADDIRS -gt 0 ] ; then
 #        eval $CVMFSABORT
 #        if [ -n "$MAILTO" ] ; then
-#            mail -s "[ATLAS CVMFS ERROR] `hostname`" "$MAILTO" <<EOD
+#            mail -s "[ATLAS CVMFS ERROR] `hostname`" $MAILTO <<EOD
 #Dear admin,
 #the following releases failed to install in CVMFS @ `hostname` due to a bad checkout
 #
@@ -342,7 +342,7 @@ if [ $rc -eq 0 ] ; then
     if [ -n "$CVMFSPUBLISH" -a -s $TRANSACTION ] ; then
         $CVMFSPUBLISH
         if [ -n "$MAILTO" ] ; then
-            mail -s "[ATLAS CVMFS UPDATE] `hostname`" "$MAILTO" <<EOD
+            mail -s "[ATLAS CVMFS UPDATE] `hostname`" $MAILTO <<EOD
 Dear admin,
 the following releases have been installed in CVMFS @ `hostname`
 
@@ -356,7 +356,7 @@ EOD
     else
         [ -n "$CVMFSABORT" ] && $CVMFSABORT
         if [ -n "$MAILTOALARM" ] ; then
-            mail -s "[ATLAS CVMFS UPDATE] `hostname`" "$MAILTOALARM" <<EOD
+            mail -s "[ATLAS CVMFS UPDATE] `hostname`" $MAILTOALARM <<EOD
 Dear admin,
 the Generators files failed to install in CVMFS, please check the logs.
 Regards,

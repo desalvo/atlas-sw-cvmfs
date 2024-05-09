@@ -16,8 +16,8 @@ if [ -s "$INSTCONF" ] ; then
     CVMFSTRANSACTION="`grep -i ^cvmfs_transaction= $INSTCONF | cut -d= -f 2`"
     CVMFSABORT="`grep -i ^cvmfs_abort= $INSTCONF | cut -d= -f 2`"
     CVMFSPUBLISH="`grep -i ^cvmfs_publish= $INSTCONF | cut -d= -f 2`"
-    MAILTO="`grep -i ^MailTo= $INSTCONF | cut -d= -f 2`"
-    MAILTOGD="`grep -i ^MailToGroupData= $INSTCONF | cut -d= -f 2`"
+    MAILTO="`grep -i ^MailTo= $INSTCONF | cut -d= -f 2 | tr ',' ' '`"
+    MAILTOGD="`grep -i ^MailToGroupData= $INSTCONF | cut -d= -f 2 | tr ',' ' '`"
     [ -n "$MAILTOGD" ] && MAILTOALARM="${MAILTO},${MAILTOGD}" || MAILTOALARM="${MAILTO}"
 fi
 
@@ -122,7 +122,7 @@ if [ $rc -eq 0 ] ; then
         $CVMFSPUBLISH
         if [ -n "$MAILTO" ] ; then
             echo "Sending notification"
-            mail -s "[ATLAS CVMFS UPDATE] `hostname`" "$MAILTO" <<EOD
+            mail -s "[ATLAS CVMFS UPDATE] `hostname`" $MAILTO <<EOD
 Dear admin,
 the following releases have been installed in CVMFS @ `hostname`
 
@@ -140,7 +140,7 @@ else
     [ -n "$CVMFSABORT" ] && $CVMFSABORT
     if [ -n "$MAILTOALARM" ] ; then
         echo "Sending notification"
-        mail -s "[ATLAS CVMFS ERROR] `hostname`" "$MAILTOALARM" <<EOD
+        mail -s "[ATLAS CVMFS ERROR] `hostname`" $MAILTOALARM <<EOD
 Dear admin,
 the GroupData failed to install in CVMFS.
 Regards,

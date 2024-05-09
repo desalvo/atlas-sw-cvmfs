@@ -1,6 +1,6 @@
 #!/bin/bash
 
-VERSION="sw-mgr v0.267.1 - 20240108"
+VERSION="sw-mgr v0.270.1 - 20240502"
 help() {
     cat <<EOD
 Usage: `basename $0` [OPTION]
@@ -80,6 +80,7 @@ Usage: `basename $0` [OPTION]
    --require-compiler                 Require that the release compiler is present
    --require-shfs|-S                  Require that the install area is a shared fs
    --require-prj <project name>       Require <project name> to be installed
+   --rpmlist                          List the RPMs installed in path, implies -p
    --dest <path>                      Install the release in <path>
    --skip-local-config                Skip the local configuration setup
    --lfc-check|-L                     Check LFC bindings
@@ -1799,16 +1800,65 @@ install() {
                 msgOut ERROR "Cannot download tdaq packages. Error $instrc"
             fi
         elif [ "${PRJTYPE}" == "cmake" ] ; then
-            if [ -z "`which ayum 2>/dev/null`" ] ; then
-                export PATH=$AYUM_DIR/bin:$PATH
+            GLV="`getconf  GNU_LIBC_VERSION | awk '{print $NF}' | awk -F. '{printf "%d%02d", $1, $2}'`"
+            if [ $GLV -lt 234 ] ; then
+                # EL < 9, use ayum
+                if [ -z "`which ayum 2>/dev/null`" ] ; then
+                    export PATH=$AYUM_DIR/bin:$PATH
+                fi
+                AYUM_ARCH="`echo $ARCH | sed -E 's/^_+(i686|x86_64|aarch64).(slc[0-9]*|centos[0-9]*|el[0-9]*).(gcc[0-9]{1,2}).*/\1-\2-\3/'`-$PRJOPT"
+                AYUM_REL="${PRJNAME}"
+                [ -z "$NOVERSION" ] && AYUM_REL="${AYUM_REL}_${RELEASE}_${AYUM_ARCH}"
+                msgOut INFO "Installing ${AYUM_REL} using ayum"
+                $AYUM_DIR/ayum -y install ${AYUM_REL}
+                [ -z "$IGNORE_INSTALL_ERRORS" ] && let instrc=$instrc+$?
+                $AYUM_DIR/ayum clean all
+            else
+                # EL >= 9, use dnf5
+                export DNF5_RELEASE_BRANCH="`echo ${RELEASE} | cut -d. -f 1-2`"
+                DNF5_ARCH="`echo $ARCH | sed -E 's/^_+(i686|x86_64|aarch64).(slc[0-9]*|centos[0-9]*|el[0-9]*).(gcc[0-9]{1,2}).*/\1/'`"
+                DNF5_OS="`echo $ARCH | sed -E 's/^_+(i686|x86_64|aarch64).(slc[0-9]*|centos[0-9]*|el[0-9]*).(gcc[0-9]{1,2}).*/\2/'`"
+                DNF5_COMPILER="`echo $ARCH | sed -E 's/^_+(i686|x86_64|aarch64).(slc[0-9]*|centos[0-9]*|el[0-9]*).(gcc[0-9]{1,2}).*/\3/'`"
+                DNF5_REL="${PRJNAME}"
+                [ "$DNF5_ARCH" != "$ARCH" ] && export DNF5_ARCH || export DNF5_ARCH="INVALID"
+                [ "$DNF5_OS" != "$ARCH" ] && export DNF5_OS || export DNF5_OS="INVALID"
+                [ "$DNF5_COMPILER" != "$ARCH" ] && export DNF5_COMPILER || export DNF5_COMPILER="INVALID"
+                if [ "$DNF5_ARCH" == "INVALID" -o "$DNF5_OS" == "INVALID" -o "$DNF5_COMPILER" == "INVALID" ] ; then
+                    echo "Invalid CMTCONFIG $ARCH"
+                else
+                    export ATLAS_DNF5_INSTALL_DIR="${RELLOC}"
+                    export ATLAS_DNF5_STATE_DIR="${RELLOC}/.dnf5/state"
+		    export APPTAINER_WRITABLE_TMPFS=true
+		    export APPTAINER_FIXPERMS=true
+                    [ ! -d $ATLAS_DNF5_STATE_DIR ] && mkdir -p $ATLAS_DNF5_STATE_DIR
+                    [ -z "$NOVERSION" ] && DNF5_REL="${DNF5_REL}_${RELEASE}_${DNF5_ARCH}-${DNF5_OS}-${DNF5_COMPILER}-${PRJOPT}"
+                    msgOut INFO "Installing ${DNF5_REL} using dnf5 for ARCH ${DNF5_ARCH} and OS $DNF5_OS in $ATLAS_DNF5_INSTALL_DIR"
+                    RELEASE_MAJOR="`echo $RELEASE | cut -d. -f 1`"
+                    DNF5_OPTS="--no-best"
+                    if [ $RELEASE_MAJOR -gt 17 -a $RELEASE_MAJOR -lt 24 ] ; then
+                        DNF5_OPTS="--enable-repo=lcg*"
+                        #DNF5_PREPKGS="gcc_`echo ${DNF5_COMPILER} | sed 's/^gcc//g'`*${DNF5_ARCH}*${DNF5_OS}*"
+                        DNF5_PREPKGS="binutils_*${DNF5_ARCH}*${DNF5_OS}*"
+                    fi
+                    if [ "$DNF5_ARCH" == "aarch64" -a $RELEASE_MAJOR -ge 22 -a $RELEASE_MAJOR -le 23 ] ; then
+                        DNF5_OPTS="$DNF5_OPTS --enable-repo=lcg-*${DNF5_OS}*"
+                    fi
+                    if [ "$DNF5_ARCH" == "x86_64" -a "$DNF5_OS" == "centos7" ] ; then
+                        DNF5_OPTS="$DNF5_OPTS --enable-repo=lcg-*${DNF5_OS}*${DNF5_ARCH}*"
+                        #DNF5_ADDPKGS="gcc_`echo ${DNF5_COMPILER} | sed 's/^gcc//g'`*"
+                    fi
+                    msgOut "export ATLAS_DNF5_INSTALL_DIR=\"${RELLOC}\""
+                    msgOut "export ATLAS_DNF5_STATE_DIR=\"${RELLOC}/.dnf5/state\""
+                    msgOut "$DNF5_DIR/atlas-dnf5 --setvar BRANCH=${DNF5_RELEASE_BRANCH} --setvar ARCH=${DNF5_ARCH} --setvar OS=${DNF5_OS} install --skip-broken ${DNF5_OPTS} -y ${DNF5_ADDPKGS} ${DNF5_REL}"
+		    if [ -n "$DNF5_PREPKGS" ] ; then
+                        msgOut "$DNF5_DIR/atlas-dnf5 --setvar BRANCH=${DNF5_RELEASE_BRANCH} --setvar ARCH=${DNF5_ARCH} --setvar OS=${DNF5_OS} install --skip-broken ${DNF5_OPTS} -y ${DNF5_PREPKGS}"
+                        $DNF5_DIR/atlas-dnf5 --setvar BRANCH=${DNF5_RELEASE_BRANCH} --setvar ARCH=${DNF5_ARCH} --setvar OS=${DNF5_OS} install --skip-broken ${DNF5_OPTS} -y ${DNF5_PREPKGS}
+		    fi
+                    $DNF5_DIR/atlas-dnf5 --setvar BRANCH=${DNF5_RELEASE_BRANCH} --setvar ARCH=${DNF5_ARCH} --setvar OS=${DNF5_OS} install --skip-broken ${DNF5_OPTS} -y ${DNF5_ADDPKGS} ${DNF5_REL}
+                    [ -z "$IGNORE_INSTALL_ERRORS" ] && let instrc=$instrc+$?
+                    $DNF5_DIR/atlas-dnf5 --setvar BRANCH=${DNF5_RELEASE_BRANCH} --setvar ARCH=${DNF5_ARCH} --setvar OS=${DNF5_OS} clean all
+                fi
             fi
-            AYUM_ARCH="`echo $ARCH | sed -E 's/^_+(i686|x86_64|aarch64).(slc[0-9]*|centos[0-9]*|el[0-9]*).(gcc[0-9]{1,2}).*/\1-\2-\3/'`-$PRJOPT"
-            AYUM_REL="${PRJNAME}"
-            [ -z "$NOVERSION" ] && AYUM_REL="${AYUM_REL}_${RELEASE}_${AYUM_ARCH}"
-            msgOut INFO "Installing ${AYUM_REL}"
-            $AYUM_DIR/ayum -y install ${AYUM_REL}
-            [ -z "$IGNORE_INSTALL_ERRORS" ] && let instrc=$instrc+$?
-            $AYUM_DIR/ayum clean all
             SKIPSETPERM="yes"
         else
             if [ "$PACMAN_OPTS" != "" -a "$USEPACBALL" != "yes" ] ; then
@@ -3396,15 +3446,40 @@ remove() {
             msgOut INFO "No directory $PRJNAME found"
         fi
     elif [ "$PRJTYPE" == "cmake" ] ; then
-        if [ -z "`which ayum 2>/dev/null`" ] ; then
-            export PATH=$AYUM_DIR/bin:$PATH
-        fi
-        AYUM_ARCH="`echo $ARCH | sed -E 's/^_+(i686|x86_64|aarch64).(slc[0-9]*|cc[0-9]*).(gcc[0-9][0-9])/\1-\2-\3/'`-$PRJOPT"
-        AYUM_REL="${PRJNAME}"
-        [ -z "$NOVERSION" ] && AYUM_REL="${AYUM_REL}_${RELEASE}_${AYUM_ARCH}"
-        msgOut INFO "Removing ${AYUM_REL}"
-        $AYUM_DIR/ayum -y remove ${AYUM_REL}
-        removerc=$?
+        GLV="`getconf  GNU_LIBC_VERSION | awk '{print $NF}' | awk -F. '{printf "%d%02d", $1, $2}'`"
+        if [ $GLV -lt 234 ] ; then
+            # EL < 9, use ayum
+            if [ -z "`which ayum 2>/dev/null`" ] ; then
+                export PATH=$AYUM_DIR/bin:$PATH
+            fi
+            AYUM_ARCH="`echo $ARCH | sed -E 's/^_+(i686|x86_64|aarch64).(slc[0-9]*|cc[0-9]*).(gcc[0-9][0-9])/\1-\2-\3/'`-$PRJOPT"
+            AYUM_REL="${PRJNAME}"
+            [ -z "$NOVERSION" ] && AYUM_REL="${AYUM_REL}_${RELEASE}_${AYUM_ARCH}"
+            msgOut INFO "Removing ${AYUM_REL} using ayum"
+            $AYUM_DIR/ayum -y remove ${AYUM_REL}
+            removerc=$?
+       else
+            # EL >= 9, use dnf5
+            export DNF5_RELEASE_BRANCH="`echo ${RELEASE} | cut -d. -f 1-2`"
+            DNF5_ARCH="`echo $ARCH | sed -E 's/^_+(i686|x86_64|aarch64).(slc[0-9]*|centos[0-9]*|el[0-9]*).(gcc[0-9]{1,2}).*/\1/'`"
+            DNF5_OS="`echo $ARCH | sed -E 's/^_+(i686|x86_64|aarch64).(slc[0-9]*|centos[0-9]*|el[0-9]*).(gcc[0-9]{1,2}).*/\2/'`"
+            DNF5_COMPILER="`echo $ARCH | sed -E 's/^_+(i686|x86_64|aarch64).(slc[0-9]*|centos[0-9]*|el[0-9]*).(gcc[0-9]{1,2}).*/\3/'`"
+            DNF5_REL="${PRJNAME}"
+            [ "$DNF5_ARCH" != "$ARCH" ] && export DNF5_ARCH || export DNF5_ARCH="INVALID"
+            [ "$DNF5_OS" != "$ARCH" ] && export DNF5_OS || export DNF5_OS="INVALID"
+            [ "$DNF5_COMPILER" != "$ARCH" ] && export DNF5_COMPILER || export DNF5_COMPILER="INVALID"
+            if [ "$DNF5_ARCH" == "INVALID" -o "$DNF5_OS" == "INVALID" -o "$DNF5_COMPILER" == "INVALID" ] ; then
+                echo "Invalid CMTCONFIG $ARCH"
+            else
+                export ATLAS_DNF5_INSTALL_DIR="${RELLOC}"
+                export ATLAS_DNF5_STATE_DIR="${RELLOC}/.dnf5/state"
+                [ ! -d $ATLAS_DNF5_STATE_DIR ] && mkdir -p $ATLAS_DNF5_STATE_DIR
+                [ -z "$NOVERSION" ] && DNF5_REL="${DNF5_REL}_${RELEASE}_${DNF5_ARCH}-${DNF5_OS}-${DNF5_COMPILER}-${PRJOPT}"
+                msgOut INFO "Removing ${DNF5_REL} using dnf5 for ARCH ${DNF_ARCH} and OS ${DNF5_OS}"
+                $DNF5_DIR/atlas-dnf5 --setvar BRANCH=${DNF5_RELEASE_BRANCH} --setvar ARCH=${DNF5_ARCH} --setvar OS=${DNF5_OS} -y remove ${DNF5_REL}
+                removerc=$?
+            fi
+       fi
     else
         # Setup the release and check the physical install path
         if [ -s "${RELPATH}/cmtsite/asetup.sh" -a $MAINRELVER -ge 160000 ] ; then
@@ -3702,6 +3777,56 @@ remove() {
     fi
 
     return $removerc
+}
+
+rpmlist() {
+    let rpmlistrc=0
+
+    # Paths
+    [ -z "${SWLOC}" -a -n "${RELLOC}" ] && SWLOC="${RELLOC}"
+    [ -z "${RELLOC}" -a -n "${SWLOC}" ] && RELLOC="${SWLOC}"
+
+    if [ -z "${RELLOC}" -a -z "${SWLOC}" ] ; then
+       msgOut "No path specified, please use -p to set the path"
+       return 10
+    fi
+    if [ ! -d "${RELLOC}" ] ; then
+       msgOut "Invalid path specified, please use -p to set the path"
+       return 10
+    else
+       msgOut INFO "RPM list for path $RELLOC started at `date`"
+    fi
+
+    GLV="`getconf  GNU_LIBC_VERSION | awk '{print $NF}' | awk -F. '{printf "%d%02d", $1, $2}'`"
+    if [ $GLV -lt 234 ] ; then
+        # EL < 9, use ayum
+        if [ -z "`which ayum 2>/dev/null`" ] ; then
+            export PATH=$AYUM_DIR/bin:$PATH
+        fi
+        AYUM_ARCH="`echo $ARCH | sed -E 's/^_+(i686|x86_64|aarch64).(slc[0-9]*|cc[0-9]*).(gcc[0-9][0-9])/\1-\2-\3/'`-$PRJOPT"
+        AYUM_REL="${PRJNAME}"
+        [ -z "$NOVERSION" ] && AYUM_REL="${AYUM_REL}_${RELEASE}_${AYUM_ARCH}"
+        msgOut INFO "Listing RPMs installed in ${RELLOC} using ayum"
+        $AYUM_DIR/ayum list installed
+        rpmlistrc=$?
+    else
+        # EL >= 9, use dnf5
+        [ -n "$RELEASE" ] && export DNF5_RELEASE_BRANCH="`echo ${RELEASE} | cut -d. -f 1-2`" || export DNF5_RELEASE_BRANCH="`echo $RELLOC | awk -F/ '{print $NF}'`"
+        DNF5_ARCH="`echo $ARCH | sed -E 's/^_+(i686|x86_64|aarch64).(slc[0-9]*|centos[0-9]*|el[0-9]*).(gcc[0-9]{1,2}).*/\1/'`"
+        DNF5_OS="`echo $ARCH | sed -E 's/^_+(i686|x86_64|aarch64).(slc[0-9]*|centos[0-9]*|el[0-9]*).(gcc[0-9]{1,2}).*/\2/'`"
+        DNF5_COMPILER="`echo $ARCH | sed -E 's/^_+(i686|x86_64|aarch64).(slc[0-9]*|centos[0-9]*|el[0-9]*).(gcc[0-9]{1,2}).*/\3/'`"
+        DNF5_REL="${PRJNAME}"
+        export ATLAS_DNF5_INSTALL_DIR="${RELLOC}"
+        export ATLAS_DNF5_STATE_DIR="${RELLOC}/.dnf5/state"
+        [ ! -d $ATLAS_DNF5_STATE_DIR ] && mkdir -p $ATLAS_DNF5_STATE_DIR
+        [ -z "$NOVERSION" ] && DNF5_REL="${DNF5_REL}_${RELEASE}_${DNF5_ARCH}-${DNF5_OS}-${DNF5_COMPILER}-${PRJOPT}"
+        msgOut INFO "Listing RPMs installed in ${RELLOC} using dnf5"
+        msgOut INFO "ATLAS_DNF5_INSTALL_DIR=${RELLOC}"
+        msgOut INFO "ATLAS_DNF5_STATE_DIR=${RELLOC}/.dnf5/state"
+        $DNF5_DIR/atlas-dnf5 --setvar BRANCH=${DNF5_RELEASE_BRANCH} list --installed
+        rpmlistrc=$?
+    fi
+    return $rpmlistrc
 }
 
 prepareTagging() {
@@ -5559,7 +5684,7 @@ AISERVER="atlas-install.roma1.infn.it"
 POSTSITEURL="https://${AISERVER}/atlas_install/exec/updinfo.php"
 POSTRELURL="https://${AISERVER}/atlas_install/exec/relstat.php"
 
-OPTS=`getopt -o a:d:D:fgG:H:i:k:l:Lm:M:oO:p:P:Qr:R:s:St:T:x:w:hcCfnNquv:V -l add-tags,autoconf:,cache,check,cleanup,clean-links,compiler-home:,cvmfs-install,debug,dest:,dbarea:,dbrelease:,dbrelease-cache:,dbrelease-clean,ddm-setup:,ddm-site:,ddm-verify,dir:,disk-free:,dump-tags:,extra-tag:,extra-pkg:,force-tags,goc-name:,grid-name:,kv-conf:,kv-disable:,kv-enable:,kv-keep,kv-no-auto,kvpath:,kvpost-tag:,grid-cache,host:,ignore-install-errs,install:,install-compiler,kit-cache:,kv-cache:,kvpost,local-config:,logical:,logical-link:,manage:,min-install-size:,no-opt,no-tag,no-compat-patch,no-new-pacball,override-lock,package:,pacman-ver:,pretend-platform:,physical:,physical-link:,post-siteinfo,post-siteurl:,postinstall,project:,project-opt:,project-type:,quiet,restore-backup,reinstall,reinstall-clean,relative-links,release-only,release-name:,release-path:,pacball,pacball-dataset:,pacball-repo:,poolcond-copy,poolcond-mode:,poolcond-scandir,poolcond-topdir:,poolcond-pattern:,release-setup:,release-setup-level:,release-ver:,replicate,remove:,remove-snap:,remove-tags,rm-tags-on-fail,require-compiler,require-shfs,require-prj:,server:,setenv:,set-frontier,setup-latest:,site-config:,site-type:,skip-local-config,snap:,snapdir:,snapname:,subcluster:,tag-file:,tag-mode:,tag-utility:,tags:,target:,temp-cache,test:,tthreads:,update,use-grid,vo:,validate,validation-exe:,xml:,create-dvd,write-dvd:,help,force,no-cache,no-version,query,stagein:,lfc-check,lfcHost:,inputGUIDs:,oldPrefix:,newPrefix: -- "$@"` 
+OPTS=`getopt -o a:d:D:fgG:H:i:k:l:Lm:M:oO:p:P:Qr:R:s:St:T:x:w:hcCfnNquv:V -l add-tags,autoconf:,cache,check,cleanup,clean-links,compiler-home:,cvmfs-install,debug,dest:,dbarea:,dbrelease:,dbrelease-cache:,dbrelease-clean,ddm-setup:,ddm-site:,ddm-verify,dir:,disk-free:,dump-tags:,extra-tag:,extra-pkg:,force-tags,goc-name:,grid-name:,kv-conf:,kv-disable:,kv-enable:,kv-keep,kv-no-auto,kvpath:,kvpost-tag:,grid-cache,host:,ignore-install-errs,install:,install-compiler,kit-cache:,kv-cache:,kvpost,local-config:,logical:,logical-link:,manage:,min-install-size:,no-opt,no-tag,no-compat-patch,no-new-pacball,override-lock,package:,pacman-ver:,pretend-platform:,physical:,physical-link:,post-siteinfo,post-siteurl:,postinstall,project:,project-opt:,project-type:,quiet,restore-backup,reinstall,reinstall-clean,relative-links,release-only,release-name:,release-path:,pacball,pacball-dataset:,pacball-repo:,poolcond-copy,poolcond-mode:,poolcond-scandir,poolcond-topdir:,poolcond-pattern:,release-setup:,release-setup-level:,release-ver:,replicate,remove:,remove-snap:,remove-tags,rm-tags-on-fail,require-compiler,require-shfs,require-prj:,rpmlist,server:,setenv:,set-frontier,setup-latest:,site-config:,site-type:,skip-local-config,snap:,snapdir:,snapname:,subcluster:,tag-file:,tag-mode:,tag-utility:,tags:,target:,temp-cache,test:,tthreads:,update,use-grid,vo:,validate,validation-exe:,xml:,create-dvd,write-dvd:,help,force,no-cache,no-version,query,stagein:,lfc-check,lfcHost:,inputGUIDs:,oldPrefix:,newPrefix: -- "$@"` 
 if [ $? != 0 ] ; then
     echo "[ARGUMENTS] $@"
     echo "Terminating..."
@@ -5666,6 +5791,7 @@ while true ; do
         --rm-tags-on-fail)     RMTAGONFAIL="yes";shift;;
         --replicate)           GRIDREPLICA="yes";shift;;
         --require-shfs|-S)     REQSHAREDFS="yes";shift;;
+        --rpmlist)             ACTION="rpmlist";shift;;
         --server)              AISERVER="$2";shift 2;;
         --setenv)              SETENV="$2";shift 2;;
         --set-frontier)        SETFRONTIER="y";shift;;
@@ -5906,9 +6032,10 @@ if [ "$DEBUG" == "yes" ] ; then
     msgOut DEBUG "PYTHONPATH=${PYTHONPATH}"
 fi
 
-# Setup pacman or ayum
+# Setup pacman, ayum or dnf5
 cd "${TOPDIR}"
-if [ "$ACTION" == "validate" -o "$ACTION" == "install" -o "$ACTION" == "test" -o "$ACTION" == "remove" -o "$ACTION" == "snap" ] ; then
+[ "$ACTION" == "rpmlist" ] && PRJTYPE="cmake"
+if [ "$ACTION" == "validate" -o "$ACTION" == "install" -o "$ACTION" == "test" -o "$ACTION" == "remove" -o "$ACTION" == "snap" -o "$ACTION" == "rpmlist" ] ; then
     if [ "$ACTION" == "validate" -o "$ACTION" == "install" ] ; then
         [ "$USEPACBALL" == "yes" ] && SKIPSETUP="yes"
     fi
@@ -5927,11 +6054,19 @@ if [ "$ACTION" == "validate" -o "$ACTION" == "install" -o "$ACTION" == "test" -o
             msgOut INFO "I will not download pacman since we are using pacballs or pacman has been disabled."
         fi
     else
-        setupAyum
-        if [ $rc -ne 0 ] ; then
-            msgOut ERROR "Cannot setup ayum"
-            [ "$XMLFILE" != "" ] && xml close
-            exit $rc
+        GLV="`getconf  GNU_LIBC_VERSION | awk '{print $NF}' | awk -F. '{printf "%d%02d", $1, $2}'`"
+        if [ $GLV -lt 234 ] ; then
+            # EL < 9, use ayum
+            setupAyum
+            if [ $rc -ne 0 ] ; then
+                msgOut ERROR "Cannot setup ayum"
+                [ "$XMLFILE" != "" ] && xml close
+                exit $rc
+            fi
+        else
+            # EL >= 9, use dnf5
+            export DNF5_DIR="/cvmfs/unpacked.cern.ch/gitlab-registry.cern.ch/atlas-tdaq-software/atlas-dnf5:v5.2.0.0"
+            #export DNF5_DIR="$HOME/atlas-dnf5/x86_64-el9/current"
         fi
     fi
     if [ "$DEBUG" == "yes" ] ; then
@@ -6204,6 +6339,8 @@ elif [ "$ACTION" == "remove" ] ; then
     else
         msgOut ERROR "Skipping software removal due to previous problems."
     fi
+elif [ "$ACTION" == "rpmlist" ] ; then
+    rpmlist
 elif [ "$ACTION" == "manage" ] ; then
     if [ "$TAGACTION" == "add" ] ; then
         addTag

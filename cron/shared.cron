@@ -1,10 +1,13 @@
-0 0,4,8,16,20 * * * /home/cvatlas/bin/updateGenerators > /home/cvatlas/logs/updateGenerators.$$.lastlog 2>&1
-0 0,6,12,18 * * * /home/cvatlas/bin/updateGroupData > /home/cvatlas/logs/updateGroupData.lastlog 2>&1
-0 */2 * * * /home/cvatlas/bin/updateAGISData > /home/cvatlas/logs/updateAGISData.lastlog 2>&1
-0 2,6,10,14,18,22 * * * /home/cvatlas/bin/updateAtlasReleases > /home/cvatlas/logs/updateAtlasReleases.lastlog 2>&1
-30 */4 * * * /home/cvatlas/bin/updatePilot > /home/cvatlas/logs/updatePilot.lastlog 2>&1
+0 0,4,8,13,16,20 * * * /home/cvatlas/bin/updateGenerators > /home/cvatlas/logs/updateGenerators.$$.lastlog 2>&1
+0 0,6,12,18 * * * /home/cvatlas/bin/updateGroupData > /home/cvatlas/logs/updateGroupData.$$.lastlog 2>&1
+#0 * * * * /home/cvatlas/bin/updateAGISData > /home/cvatlas/logs/updateAGISData.lastlog 2>&1
+10 * * * * /home/cvatlas/bin/updateCRICData > /home/cvatlas/logs/updateCRICData.lastlog 2>&1
+#0 1,5,9,13,17,21 * * * /home/cvatlas/bin/updateNodeDescription > /home/cvatlas/logs/updateNodeDescription.lastlog 2>&1
+#30 2,6,10,14,18,22 * * * /home/cvatlas/bin/updateAtlasReleases > /home/cvatlas/logs/updateAtlasReleases.lastlog 2>&1
+0 * * * * /home/cvatlas/bin/updatePilot > /home/cvatlas/logs/updatePilot.lastlog 2>&1
+10 * * * * /home/cvatlas/bin/updatePilotWrapper > /home/cvatlas/logs/updatePilotWrapper.lastlog 2>&1
 15 */2 * * * /home/cvatlas/bin/updateBoinc > /home/cvatlas/logs/updateBoinc.lastlog 2>&1
-*/5 * * * * /home/cvatlas/bin/updateTzeroPatches > /home/cvatlas/logs/updateTzeroPatches.lastlog 2>&1
+20 * * * * /home/cvatlas/bin/updateTzeroPatches > /home/cvatlas/logs/updateTzeroPatches.lastlog 2>&1
 45 */6 * * * /home/cvatlas/bin/updateSimulationData > /home/cvatlas/logs/updateSimulationData.lastlog 2>&1
-30 0 * * * /home/cvatlas/bin/cleanupGroupData > /home/cvatlas/logs/cleanupGroupData.lastlog 2>&1
+#30 0 * * * /home/cvatlas/bin/cleanupGroupData > /home/cvatlas/logs/cleanupGroupData.lastlog 2>&1
 0 2 * * * /usr/sbin/tmpwatch 300 /home/cvatlas/logs
