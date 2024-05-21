@@ -1,4 +1,4 @@
-reldef_name=@SWNAME@-el9:@RELEASE@
+reldef_name=@SWNAME@-el9-aarch64:@RELEASE@
 reldef_build=cmake
 reldef_typefk=16
 reldef_archfk=77
