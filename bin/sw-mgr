@@ -1,6 +1,6 @@
 #!/bin/bash
 
-VERSION="sw-mgr v0.270.1 - 20240502"
+VERSION="sw-mgr v0.272.1 - 20240712"
 help() {
     cat <<EOD
 Usage: `basename $0` [OPTION]
@@ -1769,7 +1769,7 @@ install() {
 
     if [ $SKIPPHYSINST -eq 0 ] ; then
         if [ "${PRJTYPE}" == "poolcond" ] ; then
-            (genPoolcondPFC)
+            (genPoolcondPFCrucio)
             let instrc=$?
             if [ $instrc -eq 0 -a -z "$SKIPLOCALCONF" -a "$GRIDNAME" != "NORDUGRID" ] ; then
                 msgOut INFO "Creating or updating the local configuration setup"
@@ -1835,8 +1835,10 @@ install() {
                     msgOut INFO "Installing ${DNF5_REL} using dnf5 for ARCH ${DNF5_ARCH} and OS $DNF5_OS in $ATLAS_DNF5_INSTALL_DIR"
                     RELEASE_MAJOR="`echo $RELEASE | cut -d. -f 1`"
                     DNF5_OPTS="--no-best"
+		    msgOut INFO "Querying LCG version with ${DNF5_DIR}/atlas-dnf5 --setvar BRANCH=${DNF5_RELEASE_BRANCH} --setvar ARCH=${DNF5_ARCH} --setvar OS=${DNF5_OS} repoquery --requires ${DNF5_REL/opt-dbg/opt} | grep -m1 ^LCG_ | head -c7 | tail -c3"
+		    DNF5_LCG=$(${DNF5_DIR}/atlas-dnf5 repoquery --setvar BRANCH=${DNF5_RELEASE_BRANCH} --setvar ARCH=${DNF5_ARCH} --setvar OS=${DNF5_OS} --requires "${DNF5_REL/opt-dbg/opt}" | grep -m1 ^LCG_ | head -c7 | tail -c3)
                     if [ $RELEASE_MAJOR -gt 17 -a $RELEASE_MAJOR -lt 24 ] ; then
-                        DNF5_OPTS="--enable-repo=lcg*"
+                        DNF5_OPTS="$DNF5_OPTS --enable-repo=lcg*"
                         #DNF5_PREPKGS="gcc_`echo ${DNF5_COMPILER} | sed 's/^gcc//g'`*${DNF5_ARCH}*${DNF5_OS}*"
                         DNF5_PREPKGS="binutils_*${DNF5_ARCH}*${DNF5_OS}*"
                     fi
@@ -1849,12 +1851,12 @@ install() {
                     fi
                     msgOut "export ATLAS_DNF5_INSTALL_DIR=\"${RELLOC}\""
                     msgOut "export ATLAS_DNF5_STATE_DIR=\"${RELLOC}/.dnf5/state\""
-                    msgOut "$DNF5_DIR/atlas-dnf5 --setvar BRANCH=${DNF5_RELEASE_BRANCH} --setvar ARCH=${DNF5_ARCH} --setvar OS=${DNF5_OS} install --skip-broken ${DNF5_OPTS} -y ${DNF5_ADDPKGS} ${DNF5_REL}"
+                    msgOut "$DNF5_DIR/atlas-dnf5 --setvar BRANCH=${DNF5_RELEASE_BRANCH} --setvar ARCH=${DNF5_ARCH} --setvar OS=${DNF5_OS} --setvar LCG=${DNF5_LCG} install --skip-broken ${DNF5_OPTS} -y ${DNF5_ADDPKGS} ${DNF5_REL}"
 		    if [ -n "$DNF5_PREPKGS" ] ; then
                         msgOut "$DNF5_DIR/atlas-dnf5 --setvar BRANCH=${DNF5_RELEASE_BRANCH} --setvar ARCH=${DNF5_ARCH} --setvar OS=${DNF5_OS} install --skip-broken ${DNF5_OPTS} -y ${DNF5_PREPKGS}"
                         $DNF5_DIR/atlas-dnf5 --setvar BRANCH=${DNF5_RELEASE_BRANCH} --setvar ARCH=${DNF5_ARCH} --setvar OS=${DNF5_OS} install --skip-broken ${DNF5_OPTS} -y ${DNF5_PREPKGS}
 		    fi
-                    $DNF5_DIR/atlas-dnf5 --setvar BRANCH=${DNF5_RELEASE_BRANCH} --setvar ARCH=${DNF5_ARCH} --setvar OS=${DNF5_OS} install --skip-broken ${DNF5_OPTS} -y ${DNF5_ADDPKGS} ${DNF5_REL}
+                    $DNF5_DIR/atlas-dnf5 --setvar BRANCH=${DNF5_RELEASE_BRANCH} --setvar ARCH=${DNF5_ARCH} --setvar OS=${DNF5_OS} --setvar LCG=${DNF5_LCG} install --skip-broken ${DNF5_OPTS} -y ${DNF5_ADDPKGS} ${DNF5_REL}
                     [ -z "$IGNORE_INSTALL_ERRORS" ] && let instrc=$instrc+$?
                     $DNF5_DIR/atlas-dnf5 --setvar BRANCH=${DNF5_RELEASE_BRANCH} --setvar ARCH=${DNF5_ARCH} --setvar OS=${DNF5_OS} clean all
                 fi
@@ -3024,7 +3026,7 @@ validate() {
             fi
         elif [ "${PRJTYPE}" == "poolcond" ] ; then
             if [ -s "$SWLOG/PoolFileCatalog.xml" ] ; then
-                python -c "import xml.dom.minidom;xml.dom.minidom.parse('$SWLOG/PoolFileCatalog.xml')"
+                python3 -c "import xml.dom.minidom;xml.dom.minidom.parse('$SWLOG/PoolFileCatalog.xml')"
                 validrc=$?
                 if [ $validrc -eq 0 ] ; then
                     msgOut INFO "$SWLOG/PoolFileCatalog.xml found"
@@ -3069,8 +3071,8 @@ validate() {
                         fi
                         rm -f $PFNLIST
                     else
-                        msgOut ERROR "No FClistPFN found"
-                        validrc=20
+                        msgOut INFO "No FClistPFN found. Skipping validation"
+                        validrc=0
                     fi
                 else
                     msgOut ERROR "Cannot parse $SWLOG/PoolFileCatalog.xml"
@@ -4550,6 +4552,125 @@ genPoolcondPFC() {
 }
 
 
+genPoolcondPFCrucio() {
+    # Return code
+    gprc=0
+
+    # Check if rucio is available
+    RUCIOEXE="`which rucio 2>/dev/null`"
+    if [ -z "$RUCIOEXE" ] ; then
+        msgOut ERROR "No rucio exe found"
+        return 1
+    else
+        msgOut INFO "Using $RUCIOEXE"
+    fi
+
+    if [ -n "$PCTOPDIR" ] ; then
+        RUCIOPFCGEN="rucio list-files --pfc $PCTOPDIR"
+    else
+	msgOut ERROR "No top dir specified"
+	return 1
+    fi
+
+    # Generate a Poolcond PFC for the local site
+    if [ "$PCPATTERN" != "" -o "$PCMODE" == "gen" ] ; then
+        PFCDIR="$PWD"
+        PFCTMPDIR="/tmp/pfctmp.$$"
+        [ ! -d $PFCTMPDIR ] && mkdir -p $PFCTMPDIR
+        if [ -d $PFCTMPDIR ] ; then
+            
+            if [ "$PCMODE" == "all" -o "$PCMODE" == "gen" ] ; then
+                # Generate the PFC
+                cd $PFCTMPDIR
+                msgOut INFO "Generating temporary PFC in $PWD"
+                if [ "$PCTOPDIR" != "" ] ; then
+                    cp $PFCDIR/PoolFileCatalog.xml PoolFileCatalog.xml
+		    find  /cvmfs/atlas-condb.cern.ch/repo/conditions/*/* -maxdepth 0 -type d \
+		    ! -name d123 ! -name logDir ! -name oflcond ! -name poolcond ! -path '*/testarea/*' | \
+                    while read did; do
+                        find $did -maxdepth 1 -type f | while read fpath; do
+			    fname=`basename $fpath`
+			    fdir=`dirname $fpath`
+                            if [ $(grep -c $fname PoolFileCatalog.xml) == 0 ] ;then
+                                rucio list-files --pfc $fdir $fname > ${fname}.xml
+                                let gprc=$gprc+$?
+                                sed -i '$d' PoolFileCatalog.xml
+                                sed  '1,3d' ${fname}.xml >> PoolFileCatalog.xml
+                                rm -f ${fname}.xml
+                            fi
+		        done
+                    done
+                else
+                    msgOut ERROR "No PFC topdir defined"
+                fi
+
+                # Check for wrong srm entries in the PFC
+                if [ -s PoolFileCatalog.xml -a $gprc -eq 0 ] ; then
+                    INVALIDPFCS="`grep 'srm:/' PoolFileCatalog.xml | wc -l`"
+                    if [ $INVALIDPFCS -gt 0 ] ; then
+                        msgOut ERROR "$INVALIDPFCS PFC entries using the srm protocol, invalid PFC"
+                        gprc=1
+                    fi
+                fi
+    
+                # Early formal check of the PFC
+                if [ -s PoolFileCatalog.xml -a $gprc -eq 0 ] ; then
+                    python3 -c "import xml.dom.minidom;xml.dom.minidom.parse('PoolFileCatalog.xml')"
+                    if [ $? -ne 0 ] ; then
+                        msgOut ERROR "Cannot parse the temporary PFC, invalid or corrupted data"
+                        gprc=1
+                    fi
+                fi
+
+                # Early pfn count on the PFC and comparison with the installed copy
+                if [ -s "PoolFileCatalog.xml" -a -s "${PFCDIR}/PoolFileCatalog.xml" -a $gprc -eq 0 ] ; then
+                    PFNOLDCOUNT="`sed -n 's#.*<pfn.*name="\(.*\)".*#\1#p' ${PFCDIR}/PoolFileCatalog.xml | wc -l`"
+                    PFNNEWCOUNT="`sed -n 's#.*<pfn.*name="\(.*\)".*#\1#p' PoolFileCatalog.xml | wc -l`"
+                    if [ $PFNNEWCOUNT -lt $PFNOLDCOUNT ] ; then
+                        msgOut ERROR "The new PFC contains $PFNNEWCOUNT entries while the last one has $PFNOLDCOUNT: invalid data"
+                        gprc=1
+                    fi
+                fi
+
+                # Install the PFC
+                if [ -s PoolFileCatalog.xml ] ; then
+                    if [ $gprc -eq 0 ] ; then
+                        chmod a+r PoolFileCatalog.xml
+                        msgOut INFO "PoolFileCatalog.xml generated successfully. Installing in $PFCDIR"
+                        # Rotate the PFC files, keep 10 copies
+                        filerotate $PFCDIR/PoolFileCatalog.xml 10 1
+                        #let gprc=$gprc+$?
+                        mv -f $PFCTMPDIR/PoolFileCatalog.xml $PFCDIR
+                        let gprc=$gprc+$?
+                        [ $gprc -ne 0 ] && msgOut ERROR "Cannot install PFC"
+                        cd $PFCDIR; rm -fr $PFCTMPDIR
+                    else
+                        msgOut ERROR "PoolFileCatalog.xml invalid or corrupted. Saving a copy in $PFCDIR/PoolFileCatalog.xml.failed"
+                        mv -f $PFCTMPDIR/PoolFileCatalog.xml $PFCDIR/PoolFileCatalog.xml.failed
+                        let gprc=6
+                    fi
+                else
+                    msgOut ERROR "PoolFileCatalog.xml not created or empty"
+                    let gprc=2
+                fi
+                cd $PFCDIR; rm -fr $PFCTMPDIR
+            else
+                msgOut ERROR "Cannot create $PFCTMPDIR"
+                let gprc=3
+            fi
+        else
+            msgOut ERROR "No temporary dir found"
+            let gprc=4
+        fi
+    else
+        msgOut ERROR "No Poolcond pattern specified"
+        let gprc=5
+    fi
+
+    return $gprc
+}
+
+
 unsetLocalConfig() {
     let unsetlcrc=0
     if [ "$LOCALCONF" != "" ] ; then
@@ -5632,7 +5753,7 @@ autoconfig() {
 # MAIN program
 msgOut INFO "$VERSION starting"
 
-# Deafults
+# Defaults
 MKDVD="no"
 PACKOPT="all"
 PRJNAME="release"
