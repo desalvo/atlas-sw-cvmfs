@@ -1,6 +1,6 @@
 #!/bin/sh
 
-VERSION="`basename $0` v1.1 - 20230718"
+VERSION="`basename $0` v1.2 - 20240828"
 help() {
     cat <<EOD
 Usage: `basename $0` [OPTION]
@@ -165,7 +165,11 @@ if [ $cmdrc -eq 0 ] ; then
     echo "Changing the full tree ownership"
     chown -R cvatlas.cvatlas .
     echo "Creating package ${PKGNAME}"
-    tar cfz ${PKGNAME} images/$ENGINE/${IMAGE_LINK}.img images/$ENGINE/${ARCH}/${OUTIMG}-${SHASUM}.img fs/$ENGINE/${IMAGE_LINK} fs/$ENGINE/${ARCH}/${OUTIMG}-${SHASUM}
+    if [ -z "$NOLINK" ] ; then
+      tar cfz ${PKGNAME} images/$ENGINE/${IMAGE_LINK}.img images/$ENGINE/${ARCH}/${OUTIMG}-${SHASUM}.img fs/$ENGINE/${IMAGE_LINK} fs/$ENGINE/${ARCH}/${OUTIMG}-${SHASUM}
+    else
+      tar cfz ${PKGNAME} images/$ENGINE/${ARCH}/${OUTIMG}-${SHASUM}.img fs/$ENGINE/${ARCH}/${OUTIMG}-${SHASUM}
+    fi
     if [ $? -eq 0 ] ; then
       echo "Package successfully created as ${PKGNAME}"
     else
