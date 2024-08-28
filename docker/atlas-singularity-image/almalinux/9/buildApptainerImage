@@ -1,11 +1,13 @@
 #!/bin/sh
 
-VERSION="`basename $0` v1.0 - 20220321"
+VERSION="`basename $0` v1.1 - 20230718"
 help() {
     cat <<EOD
 Usage: `basename $0` [OPTION]
    OPTIONS
    -------
+   --engine|-e <engine-name>          Engine name
+                                      current: $ENGINE
    --link|-l <image-link>             Image link
    --name|-n <image-name>             Image name
    --help|-h                          Display this help
@@ -26,14 +28,16 @@ EOD
 OUTBASEDIR="/root/containers"
 ARCH="`uname -m`"
 DATE="`date +%Y%m%d%H%M`"
+ENGINE="apptainer"
 
-OPTS=`getopt -o D:hl:n:No:p:t -l docker-image:,help,link:,name:,nolink,out:,pkg:,trial -- "$@"`
+OPTS=`getopt -o D:e:hl:n:No:p:t -l docker-image:,engine:,help,link:,name:,nolink,out:,pkg:,trial -- "$@"`
 if [ $? != 0 ] ; then echo "Terminating..."; exit -1 ; fi
 eval set -- "$OPTS"
 
 while true ; do
     case "$1" in
         --docker-image|-D)     DOCKER_IMAGE="$2";shift 2;;
+        --engine|-e)           ENGINE="$2";shift 2;;
         --link|-l)             IMAGE_LINK="$2";shift 2;;
         --name|-n)             IMAGE_NAME="$2";shift 2;;
         --nolink|-N)           NOLINK="y";shift;;
@@ -58,14 +62,14 @@ fi
 TS="`date --utc +%Y%m%d%H%M%S`"
 OUTIMG="${IMAGE_NAME}-${TS}"
 TMPDIR=/tmp
-BASEIMGDIR="$HOME/apptainer/base"
-OUTDIR="$OUTBASEDIR/images/apptainer/${ARCH}"
-EXPORTDIR="$OUTBASEDIR/export/apptainer"
-FSDIR="$OUTBASEDIR/fs/apptainer/${ARCH}"
-IMGLINKDIR="$OUTBASEDIR/images/apptainer"
-FSLINKDIR="$OUTBASEDIR/fs/apptainer"
+BASEIMGDIR="$HOME/$ENGINE/base"
+OUTDIR="$OUTBASEDIR/images/$ENGINE/${ARCH}"
+EXPORTDIR="$OUTBASEDIR/export/$ENGINE"
+FSDIR="$OUTBASEDIR/fs/$ENGINE/${ARCH}"
+IMGLINKDIR="$OUTBASEDIR/images/$ENGINE"
+FSLINKDIR="$OUTBASEDIR/fs/$ENGINE"
 TOPDIR=$PWD
-export APPTAINER_CACHEDIR=/tmp/apptainer.$$
+export APPTAINER_CACHEDIR=/tmp/$ENGINE.$$
 [ ! -d "$APPTAINER_CACHEDIR" ] && mkdir -p $APPTAINER_CACHEDIR
 
 if [ -n "$TRIAL" ] ; then
@@ -161,7 +165,7 @@ if [ $cmdrc -eq 0 ] ; then
     echo "Changing the full tree ownership"
     chown -R cvatlas.cvatlas .
     echo "Creating package ${PKGNAME}"
-    tar cfz ${PKGNAME} images/apptainer/${IMAGE_LINK}.img images/apptainer/${ARCH}/${OUTIMG}-${SHASUM}.img fs/apptainer/${IMAGE_LINK} fs/apptainer/${ARCH}/${OUTIMG}-${SHASUM}
+    tar cfz ${PKGNAME} images/$ENGINE/${IMAGE_LINK}.img images/$ENGINE/${ARCH}/${OUTIMG}-${SHASUM}.img fs/$ENGINE/${IMAGE_LINK} fs/$ENGINE/${ARCH}/${OUTIMG}-${SHASUM}
     if [ $? -eq 0 ] ; then
       echo "Package successfully created as ${PKGNAME}"
     else
