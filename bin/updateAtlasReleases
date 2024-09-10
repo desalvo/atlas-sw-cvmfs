@@ -1,6 +1,6 @@
 #!/bin/bash
 
-VERSION="`basename $0` v1.6 - 20210415"
+VERSION="`basename $0` v1.7 - 20240910"
 help() {
     cat <<EOD
 Usage: `basename $0` [OPTION]
@@ -290,6 +290,8 @@ if [ -s $TMPRELLIST ] ; then
             fi
             CMD="`echo $RMTMPL | sed -e "s#@SITECONF@#$SITECONF#g" -e "s#@PHYSPATH@#$REL_PHYSPATH#g" -e "s#@DEFLINK@#$DEFLINK#g" -e "s#@RELARCH@#$RELARCH#g" -e "s#@RELARCHDIR@#$RELARCHDIR#g" -e "s#@RELNAME@#$RELNAME#g" -e "s#@RELVER@#$RELVER#g" -e "s#@RELSUBVER@#$RELSUBVER#g" -e "s#@RELSUBVERNODOT@#$RELSUBVERNODOT#g" -e "s#@RELMAIN@#$RELMAIN#g" -e "s#@RELTAG@#$RELTAG#g" -e "s#@VO_ATLAS_SW_DIR@#$VO_ATLAS_SW_DIR#g" -e "s#@CMAKERELDIR@#$CMAKERELDIR#g"`"
             [ -n "$REQREL" ] && CMD="`echo $CMD | sed -e "s#@REQREL@#$REQREL#g"`"
+            # Prepend the server name to the install command
+            CMD="--server $AISERVER $CMD"
             echo "####################################################"
             echo "#  Removing $RELPKG"
             echo "#  Using $SWMGR $CMD"

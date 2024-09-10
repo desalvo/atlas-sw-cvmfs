@@ -1,6 +1,6 @@
 #!/bin/sh
 
-VERSION="`basename $0` v1.0 - 20210415"
+VERSION="`basename $0` v1.1 - 20240910"
 help() {
     cat <<EOD
 Usage: `basename $0` [OPTION]
@@ -14,6 +14,7 @@ Usage: `basename $0` [OPTION]
    --name|-n <sw name>                Software name to be installed,
                                       e.g. Athena
    --rebuilddb|-R                     Rebuild the rpmdb prior to installation
+   --remove|-D                        Remove the given release
    --release|-r <release number>      Release number to be installed,
                                       e.g. 22.0.1
    --server|-s  <ai_server>           AtlasInstall server
@@ -36,7 +37,7 @@ if [ -s "$INSTCONF" ] ; then
     MAILTO="`grep -i ^MailTo= $INSTCONF | cut -d= -f 2 | tr ',' ' '`"
 fi
 
-OPTS=`getopt -o c:dfhn:Rr:s: -l cmtconfig:,debug,force,help,name:,rebuilddb,release:,server: -- "$@"`
+OPTS=`getopt -o c:dDfhn:Rr:s: -l cmtconfig:,debug,force,help,name:,rebuilddb,release:,remove,server: -- "$@"`
 if [ $? != 0 ] ; then echo "Terminating..."; exit -1 ; fi
 eval set -- "$OPTS"
 
@@ -49,6 +50,7 @@ while true ; do
         --name|-n)             SWNAME="$2";shift 2;;
         --rebuilddb|-R)        REBUILDDB="--rebuilddb";shift;;
         --release|-r)          RELEASE="$2";shift 2;;
+        --remove|-D)           REMOVE=1;shift;;
         --server|-s)           AISERVER="$2";shift 2;;
         --)                    shift;break;;
         \?)                    break;
@@ -84,6 +86,7 @@ OPTIONS=${SWNAME}-${MAJREL}-${CMTCONFIG}.options
 POSTINSTALL=${SWNAME}-${MAJREL}-${CMTCONFIG}.postinstall
 TESTNAME=${SWNAME}-${MAJREL}-${CMTCONFIG}
 [ -n "$FORCE" ] && FORCE_OPT="--force"
+[ -n "$REMOVE" ] && REMOVE_OPT="--remove"
 if [ ! -s $HOME/cvmfs-autoinstall/templates/$TEMPLATE ] ; then
     echo "No template $TEMPLATE found in $HOME/cvmfs-autoinstall/templates"
     if [ -n "$MAILTO" ] ; then
@@ -178,25 +181,27 @@ if [ $ISDEFINED -eq 1 ] ; then
     [ -s  $HOME/cvmfs-autoinstall/options/$OPTIONS ] && INSTALL_OPTS="`cat $HOME/cvmfs-autoinstall/options/$OPTIONS`"
     if [ -n "`which updateAtlasReleases 2>/dev/null`" ] ; then
         echo "Installing $RELNAME [Options: $INSTALL_OPTS]"
-        updateAtlasReleases --rel=$RELNAME --server=$AISERVER $INSTALL_OPTS $FORCE_OPT $REBUILDDB
+        updateAtlasReleases --rel=$RELNAME --server=$AISERVER $INSTALL_OPTS $FORCE_OPT $REBUILDDB $REMOVE_OPT
         rc=$?
         if [ $rc -eq 0 ] ; then
-            [ -z "$VO_ATLAS_SW_DIR" ] && VO_ATLAS_SW_DIR="/cvmfs/atlas.cern.ch/repo/sw"
-            INSTPATH="`grep ^reldef_sw_logicalpath= $TMPRELDEF | cut -d= -f 2- | sed -e 's/^\\\//' -e "s#\\$VO_ATLAS_SW_DIR#$VO_ATLAS_SW_DIR#g"`"
-            echo $INSTPATH
-            if [ -s $HOME/cvmfs-autoinstall/tests/$TESTNAME ] ; then
-                $HOME/cvmfs-autoinstall/tests/$TESTNAME $SWNAME $RELEASE $INSTPATH
-                rc=$?
-            elif [ -s $HOME/cvmfs-autoinstall/tests/default ] ; then
-                $HOME/cvmfs-autoinstall/tests/default $SWNAME $RELEASE $INSTPATH
-                rc=$?
-            fi
-            if [ -s $HOME/cvmfs-autoinstall/postinstall/$POSTINSTALL ] ; then
-                $HOME/cvmfs-autoinstall/postinstall/$POSTINSTALL
-                let rc=$rc+$?
+            if [ -z "$REMOVE" ] ; then
+                [ -z "$VO_ATLAS_SW_DIR" ] && VO_ATLAS_SW_DIR="/cvmfs/atlas.cern.ch/repo/sw"
+                INSTPATH="`grep ^reldef_sw_logicalpath= $TMPRELDEF | cut -d= -f 2- | sed -e 's/^\\\//' -e "s#\\$VO_ATLAS_SW_DIR#$VO_ATLAS_SW_DIR#g"`"
+                echo $INSTPATH
+                if [ -s $HOME/cvmfs-autoinstall/tests/$TESTNAME ] ; then
+                    $HOME/cvmfs-autoinstall/tests/$TESTNAME $SWNAME $RELEASE $INSTPATH
+                    rc=$?
+                elif [ -s $HOME/cvmfs-autoinstall/tests/default ] ; then
+                    $HOME/cvmfs-autoinstall/tests/default $SWNAME $RELEASE $INSTPATH
+                    rc=$?
+                fi
+                if [ -s $HOME/cvmfs-autoinstall/postinstall/$POSTINSTALL ] ; then
+                    $HOME/cvmfs-autoinstall/postinstall/$POSTINSTALL
+                    let rc=$rc+$?
+                fi
             fi
         fi
-        [ $rc -eq 0 ] && echo "Release $RELNAME installed successfully" || echo "Testing release $RELNAME installation failed"
+        [ $rc -eq 0 ] && echo "Release $RELNAME installed/removed successfully" || echo "Testing release $RELNAME installation failed"
     else
         echo "No release installation tool found"
         rc=10
@@ -205,7 +210,7 @@ fi
 
 # Clean up
 rm -f $TMPRELDEF
-if [ $rc -eq 0 ] ; then
+if [ $rc -eq 0 -a -z "$REMOVE" ] ; then
     if [ -n "$MAILTO" ] ; then
         mail -s "[ATLAS CVMFS AUTOINSTALL DONE] `hostname`" $MAILTO <<EOD
 Dear admin,
@@ -219,7 +224,7 @@ Regards,
 EOD
     fi
 else
-    if [ -n "$MAILTO" ] ; then
+    if [ -n "$MAILTO" -a -z "$REMOVE" ] ; then
         mail -s "[ATLAS CVMFS AUTOINSTALL ERROR] `hostname`" $MAILTO <<EOD
 Dear admin,
 the following release failed to install in CVMFS from `hostname`
