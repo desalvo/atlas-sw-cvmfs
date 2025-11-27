@@ -1,14 +1,15 @@
 ##############################
 # ATLAS local setup script
 # Alessandro De Salvo <Alessandro.De.Salvo@cern.ch>
-# 20130708
+# 20240403
 ##############################
 
 SAVEDOPTS="$@"
 
 while true ; do
     case "$1" in
-        -s) PANDARES="$2";shift 2;;
+        -s) PANDARES="$2"; [ -z "$PANDARES" ] && echo "AUTO-SETUP> NO PANDA RESOURCE SPECIFIED WITH THE -s SWITCH: SETUP INCOMPLETE" || shift; shift ;;
+        -p) PYTHONEXE="$2"; [ -z "$PYTHONEXE" ] && echo "AUTO-SETUP> NO PYTHON EXE SPECIFIED WITH THE -p SWITCH: SETUP INCOMPLETE" || shift; shift ;;
         -*) shift;;
         --) shift; break;;
         *)  break;
@@ -30,10 +31,18 @@ else
 fi
 
 if [ -z "$VO_ATLAS_SW_DIR" ] ; then
-    export VO_ATLAS_SW_DIR="/cvmfs/atlas.cern.ch/repo/sw"
+    if [ -n "$ATLAS_SW_BASE" ] ; then
+        export VO_ATLAS_SW_DIR="$ATLAS_SW_BASE/atlas.cern.ch/repo/sw"
+    else
+        export VO_ATLAS_SW_DIR="/cvmfs/atlas.cern.ch/repo/sw"
+    fi
     echo "AUTO-SETUP> WARNING: VO_ATLAS_SW_DIR not set. Automatically set to $VO_ATLAS_SW_DIR"
 fi
-export ATLAS_POOLCOND_PATH="/cvmfs/atlas.cern.ch/repo/conditions"
+if [ -n "$ATLAS_SW_BASE" ] ; then
+    export ATLAS_POOLCOND_PATH="$ATLAS_SW_BASE/atlas-condb.cern.ch/repo/conditions"
+else
+    export ATLAS_POOLCOND_PATH="/cvmfs/atlas-condb.cern.ch/repo/conditions"
+fi
 if [ -z "$CMTUSERCONTEXT" ] ; then
     GLV="`getconf  GNU_LIBC_VERSION | awk '{print $NF}' | awk -F. '{printf "%d%02d", $1, $2}'`"
     [ $GLV -gt 205 ] && export CMTUSERCONTEXT="`dirname $VO_ATLAS_SW_DIR`/tools/slc6/cmt"
@@ -46,6 +55,7 @@ if [ -n "$PANDARES" ] ; then
     [ -f $VO_ATLAS_SW_DIR/local/bin/auto-setup ] && . $VO_ATLAS_SW_DIR/local/bin/auto-setup $PANDARES_OPT --
     echo "AUTO-SETUP> INFO: setting FRONTIER_SERVER=$FRONTIER_SERVER"
     echo "AUTO-SETUP> INFO: setting DQ2_LOCAL_SITE_ID=$DQ2_LOCAL_SITE_ID"
+    echo "AUTO-SETUP> INFO: setting RUCIO_LOCAL_SITE_ID=$RUCIO_LOCAL_SITE_ID"
 else
     # Selective auto setup if $PANDARES is not defined
     ASSWITCHER="$VO_ATLAS_SW_DIR/local/bin/auto-setup-switcher"
@@ -69,6 +79,13 @@ else
                 echo "AUTO-SETUP> INFO: auto-setup DQ2_LOCAL_SITE_ID matches the local one"
             fi
         fi
+        if [ -n "$RUCIO_LOCAL_SITE_ID_TRIAL" ] ; then
+            if [ "$RUCIO_LOCAL_SITE_ID" != "$RUCIO_LOCAL_SITE_ID_TRIAL" ] ; then
+                echo "AUTO-SETUP> WARNING: auto-setup RUCIO_LOCAL_SITE_ID differs from the local one [RUCIO_LOCAL_SITE_ID=$RUCIO_LOCAL_SITE_ID]"
+            else
+                echo "AUTO-SETUP> INFO: auto-setup RUCIO_LOCAL_SITE_ID matches the local one"
+            fi
+        fi
     else
         echo "AUTO-SETUP> INFO: CUSTOM_SITE_NAME=$CUSTOM_SITE_NAME, ATLAS_SITE_NAME=$ATLAS_SITE_NAME, SITE_NAME=$SITE_NAME, PANDA_RESOURCE=$PANDARES"
         echo "AUTO-SETUP> INFO: auto setup enabled"
@@ -76,6 +93,7 @@ else
         [ -f $VO_ATLAS_SW_DIR/local/bin/auto-setup ] && . $VO_ATLAS_SW_DIR/local/bin/auto-setup $PANDARES_OPT --
         echo "AUTO-SETUP> INFO: setting FRONTIER_SERVER=$FRONTIER_SERVER"
         echo "AUTO-SETUP> INFO: setting DQ2_LOCAL_SITE_ID=$DQ2_LOCAL_SITE_ID"
+        echo "AUTO-SETUP> INFO: setting RUCIO_LOCAL_SITE_ID=$RUCIO_LOCAL_SITE_ID"
     fi
 fi
 [ -n "$ATLAS_LOCAL_AREA" -a -s $ATLAS_LOCAL_AREA/setup.sh.local ] && source $ATLAS_LOCAL_AREA/setup.sh.local
@@ -87,15 +105,18 @@ fi
 [ -z "$ATLAS_LOCAL_ROOT_BASE" ] && export ATLAS_LOCAL_ROOT_BASE="$CVMFSBASE/atlas.cern.ch/repo/ATLASLocalRootBase"
 
 # YAMPL
-[ -f $VO_ATLAS_SW_DIR/local/setup-yampl.sh ] && . $VO_ATLAS_SW_DIR/local/setup-yampl.sh --
+[ -n "$PYTHONEXE" ] && PYTHONEXE_OPT="--python $PYTHONEXE"
+[ -f $VO_ATLAS_SW_DIR/local/setup-yampl.sh ] && . $VO_ATLAS_SW_DIR/local/setup-yampl.sh $PYTHONEXE_OPT --
 
 # Fix for MadGraph
 [ -n "$TMPDIR" ] && export GFORTRAN_TMPDIR=$TMPDIR
 
 # Setup rucio, xrootd and davix
-export ALRB_noGridMW=YES
-source $ATLAS_LOCAL_ROOT_BASE/user/atlasLocalSetup.sh --quiet
-export RUCIO_ACCOUNT=pilot
+[ -z "$ALRB_noGridMW" ] && export ALRB_noGridMW=YES
+[ "$PYTHONEXE" == "python3" ] && ALRB_PYTHON_OPT="-3"
+source $ATLAS_LOCAL_ROOT_BASE/user/atlasLocalSetup.sh --quiet $ALRB_PYTHON_OPT
+#export RUCIO_ACCOUNT=${RUCIO_ACCOUNT-pilot}
+#export RUCIO_ACCOUNT=pilot
 lsetup rucio xrootd davix
 
 set -- "$SAVEDOPTS"

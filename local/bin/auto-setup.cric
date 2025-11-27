@@ -67,10 +67,10 @@ if [ -z "$VO_ATLAS_SW_DIR" ] ; then
     # Get the full path to the software root directory
     SOURCE="${BASH_SOURCE[0]}"
     while [ -h "$SOURCE" ] ; do
-        SOURCE="$(readlink "$SOURCE")"
+        SOURCE="$(readlink -f "$SOURCE")"
     done
-    DIR="$( cd -P "$( dirname "$SOURCE" )" && pwd )"
-    export VO_ATLAS_SW_DIR="`readlink -f $DIR/../..`"
+    DIRNAME="$( cd -P "$( dirname "$SOURCE" )" && pwd )"
+    export VO_ATLAS_SW_DIR="`readlink -f $DIRNAME/../..`"
 fi
 
 # Defaults

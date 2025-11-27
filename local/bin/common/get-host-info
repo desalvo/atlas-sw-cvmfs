@@ -7,7 +7,17 @@ LOCALIP="`ip route get 1 | awk '{print $NF;exit}'`"
 LOCALHOST="`hostname -f`"
 KERNELNAME="`uname -s`"
 MACHINENAME="`uname -m`"
+GLV="`getconf  GNU_LIBC_VERSION 2>/dev/null | awk '{print $NF}' | awk -F. '{printf "%d%02d", $1, $2}'`"
+case "$GLV" in
+    205)    MACHINECLASS="EL5";;
+    212)    MACHINECLASS="EL6";;
+    217)    MACHINECLASS="EL7";;
+    *)      MACHINECLASS="GLIBC_${GLV}";;
+    --)     shift;break;;
+    \?)     break;
+    exit;;
+esac
 
-echo "${LOCALIP},${LOCALHOST},${KERNELNAME},${MACHINENAME},${PROCESSORS},${MEMTOTAL},'${PROCMODEL}'"
+echo "${LOCALIP},${LOCALHOST},${KERNELNAME},${MACHINENAME},${PROCESSORS},${MEMTOTAL},'${PROCMODEL}',${MACHINECLASS}"
 
 exit

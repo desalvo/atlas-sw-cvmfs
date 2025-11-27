@@ -1,0 +1,17 @@
+reldef_name=@SWNAME@-aarch64-gcc14:@RELEASE@
+reldef_build=cmake
+reldef_typefk=10
+reldef_archfk=79
+reldef_sw_archfk=79
+reldef_default_validate_taskfk=151
+reldef_default_install_taskfk=25
+reldef_default_test_taskfk=26
+reldef_default_uninstall_taskfk=27
+reldef_default_cleanup_taskfk=28
+reldef_default_publish_tag_taskfk=29
+reldef_default_remove_tag_taskfk=30
+reldef_sw_name=@SWNAME@
+reldef_sw_physicalpath=\$VO_ATLAS_SW_DIR/prod/releases
+reldef_sw_logicalpath=\$VO_ATLAS_SW_DIR/software/23.6
+reldef_tag=VO-atlas-@SWNAME@-@RELEASE@-@CMTCONFIG@
+reldef_package=atlas-@SWNAME@-@RELEASE@-1-@CMTCONFIG@.tar.gz

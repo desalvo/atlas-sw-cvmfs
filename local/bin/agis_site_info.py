@@ -2,10 +2,10 @@
 #####################################################################
 # AGIS site info tool                                               #
 # LJSFi Framework 2.0.0                                             #
-# Alessandro De Salvo <Alessandro.DeSalvo@roma1.infn.it> - 20140212 #
+# Alessandro De Salvo <Alessandro.DeSalvo@roma1.infn.it> - 20180928 #
 #####################################################################
 
-__version__ = "$Revision: 1.3 $"[11:-1]
+__version__ = "$Revision: 1.4 $"[11:-1]
 
 __HELP__="""AGIS site info tool %s.
 Usage: agis-site-info [OPTION]

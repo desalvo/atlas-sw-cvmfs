@@ -1,6 +1,6 @@
 #!/bin/bash
 
-VERSION="sw-mgr v0.272.1 - 20240712"
+VERSION="sw-mgr v0.273.1 - 20251127"
 help() {
     cat <<EOD
 Usage: `basename $0` [OPTION]
@@ -1806,7 +1806,7 @@ install() {
                 if [ -z "`which ayum 2>/dev/null`" ] ; then
                     export PATH=$AYUM_DIR/bin:$PATH
                 fi
-                AYUM_ARCH="`echo $ARCH | sed -E 's/^_+(i686|x86_64|aarch64).(slc[0-9]*|centos[0-9]*|el[0-9]*).(gcc[0-9]{1,2}).*/\1-\2-\3/'`-$PRJOPT"
+                AYUM_ARCH="`echo $ARCH | sed -E 's/^_+(i686|x86_64|aarch64).(slc[0-9]*|centos[0-9]*|el[0-9]*).(gcc[0-9]{1,2}|clang[0-9]{1,2}).*/\1-\2-\3/'`-$PRJOPT"
                 AYUM_REL="${PRJNAME}"
                 [ -z "$NOVERSION" ] && AYUM_REL="${AYUM_REL}_${RELEASE}_${AYUM_ARCH}"
                 msgOut INFO "Installing ${AYUM_REL} using ayum"
@@ -1816,9 +1816,9 @@ install() {
             else
                 # EL >= 9, use dnf5
                 export DNF5_RELEASE_BRANCH="`echo ${RELEASE} | cut -d. -f 1-2`"
-                DNF5_ARCH="`echo $ARCH | sed -E 's/^_+(i686|x86_64|aarch64).(slc[0-9]*|centos[0-9]*|el[0-9]*).(gcc[0-9]{1,2}).*/\1/'`"
-                DNF5_OS="`echo $ARCH | sed -E 's/^_+(i686|x86_64|aarch64).(slc[0-9]*|centos[0-9]*|el[0-9]*).(gcc[0-9]{1,2}).*/\2/'`"
-                DNF5_COMPILER="`echo $ARCH | sed -E 's/^_+(i686|x86_64|aarch64).(slc[0-9]*|centos[0-9]*|el[0-9]*).(gcc[0-9]{1,2}).*/\3/'`"
+                DNF5_ARCH="`echo $ARCH | sed -E 's/^_+(i686|x86_64|aarch64).(slc[0-9]*|centos[0-9]*|el[0-9]*).(gcc[0-9]{1,2}|clang[0-9]{1,2}).*/\1/'`"
+                DNF5_OS="`echo $ARCH | sed -E 's/^_+(i686|x86_64|aarch64).(slc[0-9]*|centos[0-9]*|el[0-9]*).(gcc[0-9]{1,2}|clang[0-9]{1,2}).*/\2/'`"
+                DNF5_COMPILER="`echo $ARCH | sed -E 's/^_+(i686|x86_64|aarch64).(slc[0-9]*|centos[0-9]*|el[0-9]*).(gcc[0-9]{1,2}|clang[0-9]{1,2}).*/\3/'`"
                 DNF5_REL="${PRJNAME}"
                 [ "$DNF5_ARCH" != "$ARCH" ] && export DNF5_ARCH || export DNF5_ARCH="INVALID"
                 [ "$DNF5_OS" != "$ARCH" ] && export DNF5_OS || export DNF5_OS="INVALID"
@@ -3454,7 +3454,7 @@ remove() {
             if [ -z "`which ayum 2>/dev/null`" ] ; then
                 export PATH=$AYUM_DIR/bin:$PATH
             fi
-            AYUM_ARCH="`echo $ARCH | sed -E 's/^_+(i686|x86_64|aarch64).(slc[0-9]*|cc[0-9]*).(gcc[0-9][0-9])/\1-\2-\3/'`-$PRJOPT"
+            AYUM_ARCH="`echo $ARCH | sed -E 's/^_+(i686|x86_64|aarch64).(slc[0-9]*|cc[0-9]*|el[0-9]*).(gcc[0-9]{1,2}|clang[0-9]{1,2})/\1-\2-\3/'`-$PRJOPT"
             AYUM_REL="${PRJNAME}"
             [ -z "$NOVERSION" ] && AYUM_REL="${AYUM_REL}_${RELEASE}_${AYUM_ARCH}"
             msgOut INFO "Removing ${AYUM_REL} using ayum"
@@ -3463,9 +3463,9 @@ remove() {
        else
             # EL >= 9, use dnf5
             export DNF5_RELEASE_BRANCH="`echo ${RELEASE} | cut -d. -f 1-2`"
-            DNF5_ARCH="`echo $ARCH | sed -E 's/^_+(i686|x86_64|aarch64).(slc[0-9]*|centos[0-9]*|el[0-9]*).(gcc[0-9]{1,2}).*/\1/'`"
-            DNF5_OS="`echo $ARCH | sed -E 's/^_+(i686|x86_64|aarch64).(slc[0-9]*|centos[0-9]*|el[0-9]*).(gcc[0-9]{1,2}).*/\2/'`"
-            DNF5_COMPILER="`echo $ARCH | sed -E 's/^_+(i686|x86_64|aarch64).(slc[0-9]*|centos[0-9]*|el[0-9]*).(gcc[0-9]{1,2}).*/\3/'`"
+            DNF5_ARCH="`echo $ARCH | sed -E 's/^_+(i686|x86_64|aarch64).(slc[0-9]*|centos[0-9]*|el[0-9]*).(gcc[0-9]{1,2}|clang[0-9]{1,2}).*/\1/'`"
+            DNF5_OS="`echo $ARCH | sed -E 's/^_+(i686|x86_64|aarch64).(slc[0-9]*|centos[0-9]*|el[0-9]*).(gcc[0-9]{1,2}|clang[0-9]{1,2}).*/\2/'`"
+            DNF5_COMPILER="`echo $ARCH | sed -E 's/^_+(i686|x86_64|aarch64).(slc[0-9]*|centos[0-9]*|el[0-9]*).(gcc[0-9]{1,2}|clang[0-9]{1,2}).*/\3/'`"
             DNF5_REL="${PRJNAME}"
             [ "$DNF5_ARCH" != "$ARCH" ] && export DNF5_ARCH || export DNF5_ARCH="INVALID"
             [ "$DNF5_OS" != "$ARCH" ] && export DNF5_OS || export DNF5_OS="INVALID"
@@ -3805,7 +3805,7 @@ rpmlist() {
         if [ -z "`which ayum 2>/dev/null`" ] ; then
             export PATH=$AYUM_DIR/bin:$PATH
         fi
-        AYUM_ARCH="`echo $ARCH | sed -E 's/^_+(i686|x86_64|aarch64).(slc[0-9]*|cc[0-9]*).(gcc[0-9][0-9])/\1-\2-\3/'`-$PRJOPT"
+        AYUM_ARCH="`echo $ARCH | sed -E 's/^_+(i686|x86_64|aarch64).(slc[0-9]*|cc[0-9]*|el[0-9]*).(gcc[0-9]{1,2}|clang[0-9]{1,2})/\1-\2-\3/'`-$PRJOPT"
         AYUM_REL="${PRJNAME}"
         [ -z "$NOVERSION" ] && AYUM_REL="${AYUM_REL}_${RELEASE}_${AYUM_ARCH}"
         msgOut INFO "Listing RPMs installed in ${RELLOC} using ayum"
@@ -3814,9 +3814,9 @@ rpmlist() {
     else
         # EL >= 9, use dnf5
         [ -n "$RELEASE" ] && export DNF5_RELEASE_BRANCH="`echo ${RELEASE} | cut -d. -f 1-2`" || export DNF5_RELEASE_BRANCH="`echo $RELLOC | awk -F/ '{print $NF}'`"
-        DNF5_ARCH="`echo $ARCH | sed -E 's/^_+(i686|x86_64|aarch64).(slc[0-9]*|centos[0-9]*|el[0-9]*).(gcc[0-9]{1,2}).*/\1/'`"
-        DNF5_OS="`echo $ARCH | sed -E 's/^_+(i686|x86_64|aarch64).(slc[0-9]*|centos[0-9]*|el[0-9]*).(gcc[0-9]{1,2}).*/\2/'`"
-        DNF5_COMPILER="`echo $ARCH | sed -E 's/^_+(i686|x86_64|aarch64).(slc[0-9]*|centos[0-9]*|el[0-9]*).(gcc[0-9]{1,2}).*/\3/'`"
+        DNF5_ARCH="`echo $ARCH | sed -E 's/^_+(i686|x86_64|aarch64).(slc[0-9]*|centos[0-9]*|el[0-9]*).(gcc[0-9]{1,2}|clang[0-9]{1,2}).*/\1/'`"
+        DNF5_OS="`echo $ARCH | sed -E 's/^_+(i686|x86_64|aarch64).(slc[0-9]*|centos[0-9]*|el[0-9]*).(gcc[0-9]{1,2}|clang[0-9]{1,2}).*/\2/'`"
+        DNF5_COMPILER="`echo $ARCH | sed -E 's/^_+(i686|x86_64|aarch64).(slc[0-9]*|centos[0-9]*|el[0-9]*).(gcc[0-9]{1,2}|clang[0-9]{1,2}).*/\3/'`"
         DNF5_REL="${PRJNAME}"
         export ATLAS_DNF5_INSTALL_DIR="${RELLOC}"
         export ATLAS_DNF5_STATE_DIR="${RELLOC}/.dnf5/state"
@@ -5375,10 +5375,10 @@ setupAyum() {
     mv -f yum.conf.fixed yum.conf
 
     # Repo arch
-    AYUM_REPO_ARCH="`echo $ARCH | sed -E 's/^_+(i686|x86_64|aarch64).(slc[0-9]*|cc[0-9]*|centos[7-9]*|el[0-9]*).(gcc[0-9]+)/\1/'`"
+    AYUM_REPO_ARCH="`echo $ARCH | sed -E 's/^_+(i686|x86_64|aarch64).(slc[0-9]*|cc[0-9]*|centos[7-9]*|el[0-9]*).(gcc[0-9]+|clang[0-9]+)/\1/'`"
 
     # elversion
-    AYUM_ELVERSION="`echo $ARCH | sed -E 's/^_+(i686|x86_64|aarch64).(slc|cc|centos|el)([0-9]*).(gcc[0-9]+)/\3/'`"
+    AYUM_ELVERSION="`echo $ARCH | sed -E 's/^_+(i686|x86_64|aarch64).(slc|cc|centos|el)([0-9]*).(gcc[0-9]+|clang[0-9]+)/\3/'`"
 
     # Configure the ayum repositories:
     cat - >./etc/yum.repos.d/lcg.repo <<EOF

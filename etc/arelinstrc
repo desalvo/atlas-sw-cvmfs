@@ -1,7 +1,8 @@
 #Trial=yes
 VO_ATLAS_SW_DIR=/cvmfs/atlas.cern.ch/repo/sw
 AtlasSiteConfig=@VO_ATLAS_SW_DIR@/AtlasSiteConfig.sh
-AtlasInstallServer=atlas-install.roma1.infn.it
+#AtlasInstallServer=atlas-install.roma1.infn.it
+AtlasInstallServer=atlas-install.apps.desalvo.eu
 PhysPath=@VO_ATLAS_SW_DIR@/software/@RELARCHDIR@/@RELMAIN@
 PhysPathCmake=@VO_ATLAS_SW_DIR@/software/@CMAKERELDIR@
 DefaultArch=i686-slc5-gcc43-opt

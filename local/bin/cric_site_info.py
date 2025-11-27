@@ -60,13 +60,20 @@ __CACHE_EXPIRY__ = 3600
 __STALE_TMPFILE__ = 200
 __TMPFILE__     = "%s.tmp" % __CACHE_FILE__
 __MAX_BACKUP_FILES__ = 10
+#__BPROXY_MAP__ = {
+#                       "cern.ch": "http://atlasbpfrontier.cern.ch:3127",
+#                       "gridpp.rl.ac.uk": "http://atlasbpfrontier.cern.ch:3127",
+#                       "lcg.triumf.ca": "http://atlasbpfrontier.fnal.gov:3127",
+#                       "in2p3.fr": "http://atlasbpfrontier.cern.ch:3127",
+#                     }
+#__DEFAULT_BPROXIES__ = ["http://atlasbpfrontier.cern.ch:3127","http://atlasbpfrontier.fnal.gov:3127"]
 __BPROXY_MAP__ = {
-                       "cern.ch": "http://atlasbpfrontier.cern.ch:3127",
-                       "gridpp.rl.ac.uk": "http://atlasbpfrontier.cern.ch:3127",
-                       "lcg.triumf.ca": "http://atlasbpfrontier.fnal.gov:3127",
-                       "in2p3.fr": "http://atlasbpfrontier.cern.ch:3127",
-                     }
-__DEFAULT_BPROXIES__ = ["http://atlasbpfrontier.cern.ch:3127","http://atlasbpfrontier.fnal.gov:3127"]
+                       "cern.ch": "http://v4f.hl-lhc.net:6082",
+                       "gridpp.rl.ac.uk": "http://v4f.hl-lhc.net:6082",
+                       "lcg.triumf.ca": "http://v4f.hl-lhc.net:6082",
+                       "in2p3.fr": "http://v4f.hl-lhc.net:6082",
+                 }
+__DEFAULT_BPROXIES__ = ["http://v4f.hl-lhc.net:6082"]
 __PROXY_DEFAULT_AUTOCONFIG__ = "(serverurl=http://atlascern-frontier.openhtc.io:8080/atlr)(serverurl=http://atlascern1-frontier.openhtc.io:8080/atlr)(serverurl=http://atlascern2-frontier.openhtc.io:8080/atlr)(serverurl=http://atlascern3-frontier.openhtc.io:8080/atlr)(serverurl=http://atlascern4-frontier.openhtc.io:8080/atlr)(proxyconfigurl=http://grid-wpad/wpad.dat)(proxyconfigurl=http://lhchomeproxy.cern.ch/wpad.dat)(proxyconfigurl=http://lhchomeproxy.fnal.gov/wpad.dat)"
 
 if ("VO_ATLAS_SW_DIR" in os.environ):
@@ -108,8 +115,8 @@ class cricSiteInfo:
         json_site_data = None
 
         if (os.path.exists(__DEFAULT_CRIC_SITE_INFO__)):
-            #st = os.stat(__DEFAULT_CRIC_SITE_INFO__)
-            #sys.stderr.write("Size of cache file %s is %d\n" % (__DEFAULT_CRIC_SITE_INFO__,st.st_size))
+            st = os.stat(__DEFAULT_CRIC_SITE_INFO__)
+            sys.stderr.write("Size of CRIC cache file %s is %d\n" % (__DEFAULT_CRIC_SITE_INFO__,st.st_size))
             try:
                 asinfo = __DEFAULT_CRIC_SITE_INFO__
                 if (self.debug): sys.stderr.write("Reading CRIC site data from %s\n" % asinfo)
@@ -292,7 +299,7 @@ class cricSiteInfo:
                             tot_fs_num = 0
                             for fserv in fsconfdata["frontier"]:
                                 fs_num[fserv[0]] = 1
-                                if (len(fserv) == 2): fs_num[fserv[0]] += len(fserv[1])
+                                if (len(fserv) >= 2): fs_num[fserv[0]] += len(fserv[1])
                                 tot_fs_num += fs_num[fserv[0]]
                             if (tot_fs_num > maxserv):
                                 factor = float(maxserv) / float(tot_fs_num)
@@ -311,7 +318,7 @@ class cricSiteInfo:
                                 except:
                                     bproxy_map = __DEFAULT_BPROXIES__
                                 fsconf += "(serverurl=%s)" % fserv[0]
-                                if (len(fserv) == 2):
+                                if (len(fserv) >= 2):
                                     ns = 1
                                     if ("iteritems" in dir(fserv[1])):
                                         # Python 2
@@ -328,7 +335,7 @@ class cricSiteInfo:
                         if ("squid" in fsconfdata):
                             for fsquid in fsconfdata["squid"]:
                                 fsconf += "(proxyurl=%s)" % fsquid[0]
-                                if (len(fsquid) == 2):
+                                if (len(fsquid) >= 2):
                                     if ("iteritems" in dir(fsquid[1])):
                                         # Python 2
                                         fsquid_info = fsquid[1].iteritems()

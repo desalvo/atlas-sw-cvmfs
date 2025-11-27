@@ -22,6 +22,7 @@ TIMEOUT="timeout 30s"
 LSENDPOINT="http://atlas-svc-07.roma1.infn.it:8080/sitedesc"
 SDENDPOINT="http://atlas-svc-07.roma1.infn.it:8080/slotdesc"
 NDENDPOINT="http://atlas-svc-07.roma1.infn.it:8080/nodedesc"
+NFENDPOINT="http://atlas-svc-07.roma1.infn.it:8080/nodefeatures"
 REPORT="http://atlas-svc-07.roma1.infn.it:8080/report"
 JMTYPE="$BATCH_SYSTEM"
 [ -z "$JMTYPE" ] && JMTYPE="`$TIMEOUT $AGISINFO -j $PANDARES`"
@@ -43,19 +44,17 @@ if [ $rc -eq 0 ] ; then
                                   QINFO="`$TIMEOUT $VO_ATLAS_SW_DIR/local/bin/pbs/get-queue-info $QNAME $CORECOUNT`";
                                   [ -z "$QINFO" ] && $TIMEOUT curl --connect-timeout 10 -X PUT "${REPORT}/queue" -d "$RESINFO [`qstat -Q 2>&1`]"
                                   ;;
-            condor|HTCondorCE|HTCondor) HINFO="`$TIMEOUT $VO_ATLAS_SW_DIR/local/bin/condor/get-host-slots`";
-                                  SINFO="`$TIMEOUT $VO_ATLAS_SW_DIR/local/bin/condor/get-queue-slots $QNAME`";
-                                  QINFO="`$TIMEOUT $VO_ATLAS_SW_DIR/local/bin/condor/get-queue-info $QNAME`";
-                                  [ -z "$QINFO" ] && $TIMEOUT curl --connect-timeout 10 -X PUT "${REPORT}/queue" -d "$RESINFO [`$TIMEOUT $VO_ATLAS_SW_DIR/local/bin/condor/get-debug-info`]"
-                                  ;;
             *)                    UNSUPPORTED=1
                                   ;;
         esac
         HDESC="`$TIMEOUT $VO_ATLAS_SW_DIR/local/bin/common/get-host-info`";
+        HFEAT="`$TIMEOUT $VO_ATLAS_SW_DIR/local/bin/common/get-host-features`";
         ALLINFO="${RESINFO},${HINFO},${SINFO},${QINFO},${HDESC}"
         [ -n "$ALLINFO" -a -n "$SINFO" -a -n "$QINFO" -a -z "$UNSUPPORTED" ] && $TIMEOUT curl --connect-timeout 10 -X PUT "${LSENDPOINT}" -d "${ALLINFO}" &> /dev/null
         [ -n "$RESINFO" -a -n "$HINFO" -a -n "$SINFO" -a -n "$QINFO" -a -z "$UNSUPPORTED" ] && $TIMEOUT curl --connect-timeout 10 -X PUT "${SDENDPOINT}" -d "${RESINFO},${HINFO},${SINFO},${QINFO}" &> /dev/null
         [ -n "$RESINFO" -a -n "$HDESC" ] && $TIMEOUT curl --connect-timeout 10 -X PUT "${NDENDPOINT}" -d "${RESINFO},${HDESC}" &> /dev/null
+        #[ -n "$RESINFO" -a -n "$HFEAT" -a -z "$SINGULARITY_CONTAINER" ] && $TIMEOUT curl --connect-timeout 10 -X PUT "${NFENDPOINT}" -d "`echo ${RESINFO} | sed 's/,/|/g'`|${HFEAT}" &> /dev/null
+        [ -n "$RESINFO" -a -n "$HFEAT" ] && $TIMEOUT curl --connect-timeout 10 -X PUT "${NFENDPOINT}" -d "`echo ${RESINFO} | sed 's/,/|/g'`|${HFEAT}" &> /dev/null
         [ -n "$UNSUPPORTED" ] && $TIMEOUT curl --connect-timeout 10 -X PUT "${REPORT}/jm" -d "${JMTYPE}" &> /dev/null
     done
 fi
